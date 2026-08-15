@@ -2,7 +2,7 @@
 type: concept
 title: Build order and cut list
 description: Live plan — update the checkboxes as state changes; this page is the coordination point
-timestamp: 2026-08-15T20:00:00Z
+timestamp: 2026-08-15T21:05:00Z
 ---
 
 Submissions lock 6:45 PM PDT. Demo: live Claude Code session with planted PII, split screen with
@@ -10,11 +10,25 @@ dashboard (catches, dispositions, Band consult log, ledger rows), injection fixt
 security moment.
 
 ## Track B (teammate — `prompts/teammate-track-b.md`)
-- [ ] 25 synthetic transcripts ([[contracts/transcripts-jsonl]])
-- [ ] Baseline redaction + BEFORE metrics ([[contracts/redacted-baseline]])
-- [ ] Terac study LIVE — opportunity id: ___ , quoted ETA: ___  ← CLOCK-CRITICAL
-- [ ] `scripts/fetch_labels.py` runs clean ([[contracts/labels-json]])
-- [ ] Stripe checkbox submitted (team name + payment link + rk_ key)
+- [x] 25 synthetic transcripts ([[contracts/transcripts-jsonl]]) — `data/transcripts.jsonl`,
+      regenerate with `python3 scripts/gen_transcripts.py` (validates verbatim planting on write).
+      82 planted entities / 19 types; 10 hard-case transcripts, 5 tricky negatives, t25 injection.
+- [~] Baseline redaction + BEFORE metrics ([[contracts/redacted-baseline]]) — `scripts/redact_baseline.py`
+      written and unit-tested offline against three candidate response shapes. BLOCKED on
+      `PIONEER_API_KEY`. Run `--probe` first to confirm the real shape, then the full pass.
+- [ ] Terac study LIVE — opportunity id: ___ , quoted ETA: ___  ← CLOCK-CRITICAL, **BLOCKED**:
+      Terac MCP is not configured in this environment and credits are not redeemed. Nothing in
+      Track B can unblock this; it needs the account holder. Snippet set is ready to go the
+      moment baseline redactions exist (15 = 10 hard + t25 + 4 easy).
+- [~] `scripts/fetch_labels.py` runs clean ([[contracts/labels-json]]) — aggregation verified
+      offline against a synthetic dump, emits the exact frozen shape. Auth check pending study.
+- [ ] Stripe checkbox submitted (team name + payment link + rk_ key) — needs account holder.
+
+### Note for Track A — redaction invariant found while testing
+The Detector returns only the *first* occurrence of a value that appears several times in one
+Transcript. Redacting only the returned offsets leaks every repeat. `redact()` therefore also
+scrubs literal repeats of any detected span (≥4 chars) within that Transcript. The Sentinel needs
+the same rule or it will leak on t01, t06, t14, t18, t25 — every one of those repeats a value.
 
 ## Track A (Het + Claude)
 - [ ] Sentinel: Claude Code hook → Pioneer inference → typed-placeholder redaction
