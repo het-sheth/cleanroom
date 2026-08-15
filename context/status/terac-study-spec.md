@@ -2,18 +2,42 @@
 type: worked-example
 title: Terac study — ready-to-launch spec
 description: Exact feasibility/launch calls and decision tree for the leak-spotting study (Task 3)
-timestamp: 2026-08-15T21:20:00Z
+timestamp: 2026-08-15T22:10:00Z
 ---
 
-Status: **FEASIBILITY REQUESTED** (id si6si8o8barzgjhhlrducc36, 2026-08-15 ~21:08Z, 4h-turnaround ask, gen-pop, 5 participants each rating all 15 snippets). Quote expected ~1h; launch follows decision tree below.
-credit link is unredeemed. Both need the account holder; Track B cannot self-unblock. Everything
-below is prepared so launch is a single call once it is.
+Status: **DRAFT BUILT, AWAITING LAUNCH APPROVAL** (2026-08-15 ~22:08Z).
 
-Prereqs, in order:
-1. `claude mcp add --transport http terac https://terac.com/api/mcp`, restart the session, complete
-   the OAuth prompt.
-2. Redeem credits: https://terac.com/r/rGi7O0EfkRbzmiElg8kRjES5W2JrKNYc
-3. `PIONEER_API_KEY` in `.env` → `python3 scripts/redact_baseline.py` → `python3 scripts/build_snippets.py`.
+- Feasibility `si6si8o8barzgjhhlrducc36` → **RESPONDED**: $17.50 incentive, **$25.00 CPI**.
+- Draft opportunity: **`ydwueq13zlc9k7nb9w1w3s6y`**, 5 participants, **$125.00 total**, honored
+  at the confirmed CPI (not a machine estimate). Org balance $125.00 — exactly covers it.
+- Review/launch: https://terac.com/cleanroom-msuutrxi/default-project-zq2odgonq5b7r3cplbylw7tk/opportunities/create?id=ydwueq13zlc9k7nb9w1w3s6y
+- Terac requires explicit post-draft approval; nothing is charged and no recruitment starts until
+  `terac_launch_draft_opportunity` is called.
+Prereqs — all now DONE: Terac MCP added, credits redeemed ($125 balance), payload built.
+
+## How the draft is shaped (decisions made at build time)
+
+There is no hosted survey, and the 15 snippets total 18,205 chars against an 8,000-char
+`description` cap — so the study is **3 `activity` tasks × 5 snippets**, each carrying its
+snippets and the 3 questions inline, `review_type: manual_review`, 5 min each (15 min total,
+matching the feasibility ask). Raters type answers in a fixed per-excerpt format:
+
+```
+EXCERPT <id>
+1. Leak: Yes / No
+2. Exact words: <exact words, or "none">
+3. Readability 1-5: <n>
+```
+
+`scripts/fetch_labels.py` must parse THAT shape out of submission text — the frozen
+[[contracts/labels-json]] output is unchanged, but the input is free text, not a structured
+survey export. This is the one integration seam the draft introduced.
+
+Audience is `unrestricted_audience: true` (gen-pop worldwide, per the fastest-turnaround
+guidance). Terac refuses to launch a study with no screener, so two screening questions were
+added — technical-English comfort and long-form reading behaviour, each with two rejecting
+answers. They screen for "ordinary reader who will actually read", NOT for expertise; screening
+for expertise would invalidate the study's premise.
 
 **A launchable payload already exists.** `data/study_snippets.json` was built from a `--mock`
 baseline so the study is not gated on Pioneer — if the key is slow, this can launch as-is and the

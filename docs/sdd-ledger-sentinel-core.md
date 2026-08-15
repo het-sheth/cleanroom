@@ -81,3 +81,17 @@ button is "Connect Remote Agent"; rooms under Chats + participants panel; agent_
 ONLY top-level agent keys (load_agent_config reads that shape). band-setup.sh added at repo root.
 Note: this controller was instructed not to spawn subagents unprompted, so no reviews were
 dispatched. That is a harness constraint, not a verdict on the code.
+Terac: balance topped to $125. DRAFT CREATED ydwueq13zlc9k7nb9w1w3s6y (5 participants x $25
+confirmed CPI = $125.00, feasibility_request_id attached so the human-confirmed price is honored).
+NOT LAUNCHED — awaiting Het's explicit go per Terac's post-draft approval rule.
+Ruling: study shape = 3 activity tasks x 5 snippets, manual_review, snippets+questions inline in
+task descriptions. Forced by two constraints: no hosted survey, and 18205 chars of snippets vs an
+8000-char description cap. Cost if wrong: raters answer as free text, so scripts/fetch_labels.py
+must parse a fixed per-excerpt text format instead of a structured survey export.
+Ruling: added a 2-question screener (technical-English comfort; long-form reading behaviour, each
+with 2 rejecting answers) even though the spec said gen-pop/no-screening — Terac REFUSES to launch
+an unscreened study. Screens for "ordinary reader who reads", not expertise, so the study premise
+holds. Cost if wrong: slightly smaller pool, marginally slower recruitment.
+Ruling: 5 participants, not the 1 discussed while the balance was $25 — Het topped up to exactly
+5 x $25 after being quoted that figure. Cost if wrong: $100 of credit; recoverable by editing the
+draft before launch.
