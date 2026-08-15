@@ -7,3 +7,6 @@ __pycache__/
 .venv/
 site/
 agent_config.yaml
+.claude/
+supabase/.temp/
+.venv-band/

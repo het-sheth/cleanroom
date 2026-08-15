@@ -15,54 +15,88 @@ thresholds; the agent may launch ONE GLiNER fine-tune after ≥20 labels (ADR 00
 observed-not-acted + HMAC-confirm, NOT "accurate detection" (banned phrase; GLiNER2-PII SPY
 span-F1 is 0.477).
 
-## Work state
-- Branch `feat/sentinel-core` (SDD loop, plan `docs/superpowers/plans/2026-08-15-sentinel-core.md`):
-  - Task 1 (policy) COMPLETE, review clean. Task 2 (ledger) IMPLEMENTED at 21442a2, 29/29 tests —
-    **review NOT yet run: your first SDD action is the Task 2 task-review** per
-    superpowers:subagent-driven-development (templates in that skill; ledger has the workflow
-    trail; BASE for Task 2 = e83b690).
-  - Tasks 3 (detector+redactor — note the repeat-scrub requirement), 4 (CLI), 5 (fine-tune loop)
-    pending. Implementers/reviewers on model "sonnet" (user rule: subagents never on Fable).
-- Branch `feat/dashboard`: DONE, pushed (16/16 tests). `node dashboard/server.js --dir
-  dashboard/fixtures` → :4600. At Task 4, byte-verify its `dashboard/lib/chain.js` hashing against
-  `sentinel/lib/ledger.js` (both claim sha256(prev + JSON.stringify(9 payload keys in
-  PAYLOAD_KEYS order, missing→null))).
-- Branch `track-b/data-and-scripts` (teammate, GitHub user Baburaoooo): merged into
-  feat/sentinel-core. He owes: per-type placeholder switch (acked in
-  `context/status/integration-risks.md`), Stripe checkbox, real baseline rerun once Pioneer works.
-  Coordinate via context/ pages + git per AGENTS.md, not chat.
+Naming, since it trips people: **cleanroom** is the product/repo; the **Sentinel** is the one
+in-boundary component that intercepts transcripts and enforces dispositions (`sentinel/`). Not a
+rename candidate — see `CONTEXT.md`.
 
-## Blockers & first actions (priority order)
-1. **Terac study — CLOCK-CRITICAL, unlaunched.** The Terac MCP was added via `claude mcp add`
-   and should be available in YOUR session. Launch per `context/status/terac-study-spec.md`:
-   feasibility-quote first, then launch `data/study_snippets.json` (15 snippets, gen-pop, 5
-   raters/snippet). Ground truth (`data/study_ground_truth.json`) never reaches raters. If ETA
-   >4h, halve snippets and requote; launch something regardless.
-2. **Pioneer 403** on live inference (`card_required`) despite Pro + $40 credit. Suspects: API key
-   minted under the wrong team (keys are per-team — regenerate while "Het's Team" is selected,
-   update PIONEER_API_KEY in `.env`), or a card-on-file requirement (billing page shows none) —
-   user adds card or asks booth. Verify fix: `python3 scripts/redact_baseline.py --probe`. Then
-   full baseline + `build_snippets.py` rerun (teammate's job, coordinate).
-3. **Band agents not yet created** — user does app.band.ai → Agents → New Agent ×2
-   (specialist + exporter), key shown ONCE, UUID on settings page → gitignored
-   `agent_config.yaml` (`specialist:`/`exporter:` with `agent_id`/`api_key`). SDK facts in
-   `context/research/band.md`. Band task starts after sentinel Task 4.
-4. **Supabase** — optional flourish (user has Pro): user creates project, puts URL +
-   service_role key in `.env`; then mirror policy table + ledger rows. Below 1–3 in priority;
-   file ledger + dashboard already demo the chain.
-5. Render: $50 credit available; `dashboard/render.yaml` exists. Stretch only (prize needs Render
-   Workflows). Spend no time before core demo works.
+## The demo works right now — verify it in 30 seconds
+
+```
+CLEANROOM_SALT=demo node sentinel/cli.js scrub data/transcripts.jsonl --mock --out /tmp/demo-out
+node .claude/worktrees/agent-ae9282936049760f8/dashboard/server.js --dir /tmp/demo-out
+```
+Open :4600. Verified this session: 25 transcripts, **161 ledger rows, `ledger verify: ok`**.
+Tamper moment: edit any character in `/tmp/demo-out/ledger.jsonl`, refresh, chain break lights up.
+(The dashboard lives on branch `feat/dashboard`; the path above is the agent worktree it was
+built in. `git worktree list` if it's gone.)
+
+## Work state
+
+- **`feat/sentinel-core`** (SDD loop, plan `docs/superpowers/plans/2026-08-15-sentinel-core.md`):
+  Tasks 1–4 COMPLETE, reviews clean. **Task 5 (fine-tune loop) is IMPLEMENTED at `3fb0763`,
+  97/97 tests, but its review was never dispatched** — the review package is already generated at
+  `.superpowers/sdd/2026-08-15-sentinel-core/review-343a445..3fb0763.diff`. That is the next SDD
+  action, followed by the final whole-branch review (MERGE_BASE `25909dc`, most capable model).
+  Task 5's implementer flagged three things the reviewer should look at: the `labels-json`
+  contract has no `type` field on `leak_reports[]` so the CLI falls back to a fixed PII-type list
+  when deriving `/generate` labels; live-mode `--model` and `finetune-status`'s deployed branch
+  are verified by code inspection only (no live network in tests).
+- **`feat/dashboard`**: DONE, reviewed, 16/16 tests, pushed, in sync with origin. Its PR to master
+  can be opened any time. Byte-verified against `sentinel/lib/ledger.js` — hashes match.
+- **`track-b/data-and-scripts`** (teammate, GitHub user Baburaoooo): already merged into
+  `feat/sentinel-core`, so that's ONE PR, not two. He still owes: Stripe checkbox, real baseline
+  rerun once Pioneer works. Coordinate via `context/` pages + git per AGENTS.md, not chat.
+
+## Blockers, in priority order
+
+1. **Terac study — quote is IN, funding is short.** Feasibility `si6si8o8barzgjhhlrducc36` came
+   back **RESPONDED**: $17.50 participant incentive, **$25.00 CPI** (incentive + platform fee),
+   5 participants = **$125.00**. Org balance is **$25.00**. Top up at
+   https://terac.com/cleanroom-msuutrxi/settings/finance (needs Het). Then: create the DRAFT with
+   `terac_create_opportunity` passing `feasibility_request_id` (drafts cost nothing and start no
+   recruitment), hand Het the `links.dashboard.draft_editor` URL, and only launch after he
+   explicitly says go — Terac refuses a launch that wasn't confirmed post-draft.
+   Payload is built: `data/study_snippets.json`, 15 snippets, 8 findable leaks. Never send
+   `data/study_ground_truth.json` — that's the scoring key. Decision tree + the deliberate t25
+   injection bias are in `context/status/terac-study-spec.md`.
+   **Open design gap:** raters need somewhere to answer. There's no hosted survey. The 18,205
+   chars of snippets exceed the 8,000-char `description` cap, so the workable no-hosting shape is
+   3 `activity` tasks × 5 snippets each, `review_type: manual_review`. A study also cannot launch
+   unscreened — write a screener with a rejecting catch-all before trying.
+2. **Band agents — Het was stuck here; the recorded UI steps were stale.** Run `./band-setup.sh`
+   from the repo root (6 stages, writes gitignored `agent_config.yaml`). Corrections found this
+   session against band.ai/hacker-guide: the button is **"Connect Remote Agent"**, not "New
+   Agent"; rooms live under **Chats** with a **participants panel**, not a top-level room screen;
+   `agent_config.yaml` must carry ONLY top-level agent keys → `{agent_id, api_key}`, because
+   `band.config.load_agent_config("<key>")` reads that shape. Package is `band-sdk` (v1.6.0,
+   Python ≥3.11), import is `band`. `[anthropic]` is a real extra. Het's system Python is 3.14.5 —
+   the wizard builds `.venv-band`; if wheels don't exist, retry on 3.12.
+   Agent identities to use: `cleanroom-specialist` / handle `specialist`, and
+   `cleanroom-exporter` / handle `exporter` — Band routes by @mention, so handles are load-bearing.
+3. **Pioneer 403** on live inference (`card_required`) despite Pro + $40 credit. Suspects: key
+   minted under the wrong team (keys are per-team — regenerate with "Het's Team" selected, update
+   `PIONEER_API_KEY` in `.env`), or a card-on-file requirement. Verify with
+   `python3 scripts/redact_baseline.py --probe`. Everything downstream runs in `--mock` today, so
+   this gates only the real BEFORE numbers.
+4. **Supabase** — optional flourish. `SUPABASE_URL` / service key are still empty in `.env`. File
+   ledger + dashboard already demo the chain; below 1–3.
+5. **Pitch assets** (Het): ZDR screenshot from the Pioneer UI; set a real `CLEANROOM_SALT` in
+   `.env` before the live run.
 
 ## Demo plan (~30 min before lock)
-Split screen: `sentinel/cli.js scrub` on Track B's `data/transcripts.jsonl` (t25 = injection
-fixture, exercises all three routes) + dashboard on the output dir. Tamper-toggle moment. Show
-fine-tune job id live if Task 5 launched one. Pitch: architecture slide carries the ADR 0002
+Split screen: `sentinel/cli.js scrub` on `data/transcripts.jsonl` (t25 = injection fixture,
+exercises all three routes) + dashboard on the output dir. Tamper-toggle moment. Show the
+fine-tune job id live if one was launched. Pitch: architecture slide carries the ADR 0002
 boundary caveat + ZDR ("confirmed on-site, visible in Pioneer UI — no public doc") + the three
-rehearsed judge answers in competitive.md.
+rehearsed judge answers in `context/research/competitive.md`.
 
 ## Rules that bite
 - Never quote mock-mode numbers as detector performance.
-- All PII synthetic; keys only in `.env`/`agent_config.yaml` (gitignored).
+- All PII synthetic; keys only in `.env` / `agent_config.yaml` (both gitignored).
 - Contracts in `context/contracts/` change only with cross-track ack.
-- Cut order if time collapses: `context/status/build-order.md` (never cut: Terac study, GLiNER2
-  usage, ledger).
+- Never push to master — branch + PR. No AI attribution trailers.
+- Cut order if time collapses: `context/status/build-order.md`. Never cut: Terac study, GLiNER2
+  usage, ledger. Band is NOT on the never-cut list — if it stays stuck, fail-closed still demos
+  via the consult→timeout→redact path already in the CLI, at the cost of the Band prize track.
+- This session's controller was told not to spawn subagents unprompted, which is why Task 5's
+  review is parked rather than run. Confirm with Het before dispatching SDD reviewers.
