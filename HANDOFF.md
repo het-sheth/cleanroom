@@ -1,6 +1,6 @@
 # HANDOFF — cleanroom, Zero-Human Company Hackathon (2026-08-15)
 
-**Submissions lock 6:45 PM PDT.** Written at 15:35 PDT — about 3h 10m left.
+**Submissions lock 6:45 PM PDT.** Written at 15:50 PDT — about 2h 55m left.
 
 Read in order: this file → `AGENTS.md` → `docs/sdd-ledger-sentinel-core.md` (the SDD ledger — trust
 it and `git log` over any recollection) → `context/status/build-order.md`.
@@ -61,7 +61,7 @@ before merging. Details of what it fixed are under "Final review" below; the ful
 
 | Path | State |
 |---|---|
-| Sentinel unit + CLI, mock mode | ✅ 98 tests |
+| Sentinel unit + CLI, mock mode | ✅ 115 tests |
 | CLI → dashboard → tamper detection | ✅ run by hand |
 | **Pioneer live → our `detector.js`** | ❌ **never run.** The API was probed with curl; our client code has never touched it |
 | **The fail-open fix** | ✅ landed + controller-verified; ⚠️ the fix diff itself is unreviewed |
@@ -75,15 +75,19 @@ text in a fixed per-excerpt format (`EXCERPT <id>` / `1. Leak: Yes|No` / `2. Exa
 before any label reaches the threshold retune — which is the "after" half of the Terac criterion.
 The frozen `context/contracts/labels-json.md` OUTPUT shape does not change; only the input does.
 
-## Final whole-branch review — findings the fix wave is addressing
+## Final whole-branch review — findings, all now FIXED in `c2422d8`
 
-Verdict was **"Fixes needed before merge."** Full text is in the SDD ledger's history; the essentials:
+Verdict was **"Fixes needed before merge."** All of the below have landed; the fix diff itself
+still needs a scoped re-review. Full detail in the SDD ledger and the fix report.
 
-- **CRITICAL:** `detector.js` returns `{start: -1, end: -1}` when it cannot locate a span; `redact.js`
-  treats that as a real range, so the span **exports un-redacted** while the ledger row still says
-  `route: auto-redact`. Direct ADR 0003 violation. Mock mode cannot reach it (`mockDetect` uses
-  `indexOf`) — **it is only reachable on the live Pioneer path that just came online.**
-- **Important:** detector never verifies Pioneer's offsets match Pioneer's span text (drifted
+- **CRITICAL (fixed):** `detector.js` returned `{start: -1, end: -1}` when it could not locate a
+  span; `redact.js` treated that as a real range, so the span **exported un-redacted** while the
+  ledger row still said `route: auto-redact`. Direct ADR 0003 violation. Mock mode could not reach
+  it (`mockDetect` uses `indexOf`) — **it was only reachable on the live Pioneer path that just came
+  online.** Fix: detector emits `{start: null, end: null, unlocatable: true}`, the redactor guards
+  on real offsets, and the repeat scrub uses the detector-reported text so it is a true backstop.
+  Controller-verified by reproducing the original failing case: PII is now absent from the output.
+- **Important (all fixed):** detector never verified Pioneer's offsets match Pioneer's span text (drifted
   offsets leave a PII fragment); malformed detector output aborts mid-file leaving a half-written
   ledger; re-running `scrub` into the same `--out` appends the ledger but truncates
   `redacted.jsonl` so the printed counts disagree; `out/redacted.jsonl` carries raw PII in
@@ -95,8 +99,8 @@ Verdict was **"Fixes needed before merge."** Full text is in the SDD ledger's hi
   an SSN. **Now that Pioneer works, demo in LIVE mode.**
 
 Invariant audit from that review: metadata-only **holds**; salt never leaks (**verified**, asserted
-by tests); ADR 0005 caps **enforced in code**; fail-closed **does not hold** on the live path until
-the Critical lands.
+by tests); ADR 0005 caps **enforced in code**; fail-closed **did not hold** on the live path before
+`c2422d8` and **now holds** (reproduction re-run by the controller).
 
 ## Hackathon requirements (from the guidebook — authoritative)
 
@@ -116,7 +120,8 @@ the Critical lands.
 
 ## Priority order for the next session
 
-1. **Land the fix wave** (Critical fail-open), re-review the fix diff scoped, then `npm test`.
+1. **Re-review the fix diff scoped** (`git diff 33549ae..c2422d8`) — the fix has landed and passes
+   115/115, but nobody has reviewed it. Then open ONE PR for `feat/sentinel-core` → master.
 2. **Run the Sentinel against LIVE Pioneer** — first real end-to-end exercise of `detector.js`.
    `schema` is required on every call. This produces the real BEFORE numbers and makes the Pioneer
    prize genuine. Expect the Critical fix to matter here.
