@@ -132,3 +132,27 @@ Task 5: minor (deferred): the two throw sites in generateTrainingData duplicate 
 template string.
 Task 5: complete (commits 343a445..d020b41, review clean after round 1)
 ALL 5 TASKS COMPLETE. Dispatching final whole-branch review (MERGE_BASE 25909dc), most capable model.
+FINAL REVIEW (opus, MERGE_BASE 25909dc): verdict "fixes needed before merge" — 1 Critical
+(detector -1/-1 sentinel treated as a real range by redact.js => detected span EXPORTS UNREDACTED
+while the ledger row still says auto-redact; ADR 0003 violation, unreachable in mock mode, newly
+reachable because Pioneer live inference came online today), 5 Important, several Minor.
+Invariant audit: metadata-only HOLDS; salt never leaks (asserted by tests); ADR 0005 caps enforced
+in code; fail-closed DID NOT HOLD until the fix below.
+Final fix wave dispatched (opus, ONE wave per SKILL): C1 + I2 (offsets must agree with span text)
++ I3 (validate hits at the detector boundary; CLI names the transcript in errors) + I4 (print rows
+appended this run alongside the total) + I6 (README caveat: redacted.jsonl is an eval artifact,
+carries raw PII in detections[].text by frozen contract) + M1 (write the ADR 0005 cap record before
+the irreversible launch). Commit c2422d8. 115/115 tests (was 98); implementer reports 99/16 with
+the implementation stashed, i.e. every new test fails before and passes after.
+CONTROLLER VERIFICATION (not taken on trust): reproduced the reviewer's exact C1 case against the
+real module — "SSN 523-04-0002 on file." with {start:-1,end:-1,route:auto-redact} now yields
+"SSN [SSN_1] on file.", PII absent. Full demo re-run: 161 rows, +161 this run, unresolved spans 0,
+ledger verify ok; dashboard serves that output dir HTTP 200 with state ok:true. The fixer's concern
+that a changed stdout block might break the dashboard is a NON-ISSUE — the dashboard reads the
+output FILES, not stdout; verified live.
+Deferred-minor triage from the final review: all remaining minors STAY DEFERRED except T3's
+occurrenceIndex edge (was the root of C1, now fixed) and T4's append-vs-truncate (promoted to I4,
+now fixed).
+STATUS AT HANDOFF: all 5 tasks complete, final review fixed and controller-verified. Branch is
+mergeable. NOT yet done: scoped re-review of the fix diff (c2422d8), the PR itself, live-Pioneer
+run through detector.js, Terac label parser, Band wiring.
