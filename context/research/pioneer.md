@@ -8,9 +8,19 @@ timestamp: 2026-08-15T20:00:00Z
 Source: docs.pioneer.ai + github.com/fastino-ai/GLiNER2, researched via subagent on hackathon day;
 booth intel from Het's on-site conversation.
 
-## Inference
+## Inference — VERIFIED LIVE 2026-08-15 (real call, real key)
 - `POST https://api.pioneer.ai/inference`, header `X-API-Key: <key>` (key shown once at creation).
-- Body: `{"model_id": "fastino/gliner2-privacy-filter-PII-multi", "text": "...", "threshold": 0.5}`.
+- Body (verified): `{"model_id": "fastino/gliner2-privacy-filter-PII-multi", "text": "...",
+  "schema": {"entities": ["person", "email", ...]}, "threshold": 0.5}` — **`schema` is REQUIRED**
+  (422 `encoder.schema must be provided` without it; the `encoder.` prefix in errors is internal
+  naming — the payload itself stays FLAT, never nested).
+- Response (verified): `{"type": "encoder", "inference_id": "...", "result": {"data": {"entities":
+  {"person": [{"text", "confidence", "start", "end"}], "email": [...]}}}}` — entities grouped
+  **by type as a dict**, offsets + confidence per hit. Task 3's normalizer and Track B's script
+  must flatten this shape.
+- Cold start is real: first calls return 403→422→"timed out waiting for provider capacity";
+  retry ~25s apart, warms in ≤1 min. Billing needs Pro plan AND a card on file (free credit alone
+  → 403 card_required).
 - Schema is dynamic at inference: pass entity subset, or a `{type: description}` dict — natural-
   language descriptions improve precision. Per-entity thresholds supported. 42 PII types, 7 groups,
   7 languages. This is the no-training tuning lever (see [[contracts/policy-table]]).
