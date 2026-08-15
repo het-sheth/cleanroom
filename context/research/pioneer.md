@@ -10,6 +10,18 @@ booth intel from Het's on-site conversation.
 
 ## Inference — VERIFIED LIVE 2026-08-15 (real call, real key)
 - `POST https://api.pioneer.ai/inference`, header `X-API-Key: <key>` (key shown once at creation).
+- **LIVE VERIFIED 2026-08-15T22:30Z — the 403 `card_required` is GONE; inference returns 200.**
+  Working call, copy-paste:
+  ```
+  curl -X POST https://api.pioneer.ai/inference \
+    -H "X-API-Key: $PIONEER_API_KEY" -H "content-type: application/json" \
+    -d '{"model_id":"fastino/gliner2-privacy-filter-PII-multi","text":"...","threshold":0.5,
+         "schema":{"entities":["person","email","phone"]}}'
+  ```
+  Real response: `Jane Doe` person @ 0.996 (start 8, end 16), `jane@example.com` email @ 1.0
+  (start 20, end 36), `phone: []` — it MISSED `555-0142`. Latency 480ms, 86 tokens.
+  That miss is a genuine, quotable data point for the pitch: detection is the weak link, which is
+  exactly why nothing depends on it alone.
 - Body (verified): `{"model_id": "fastino/gliner2-privacy-filter-PII-multi", "text": "...",
   "schema": {"entities": ["person", "email", ...]}, "threshold": 0.5}` — **`schema` is REQUIRED**
   (422 `encoder.schema must be provided` without it; the `encoder.` prefix in errors is internal
