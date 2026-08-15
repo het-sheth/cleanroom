@@ -72,7 +72,11 @@ Use a temp dir (`fs.mkdtempSync(os.tmpdir() + "/ledger-")`) for files.
 - Returns `{ redactedText, replacements: [{ token, start, end, type }] }`. Apply replacements
   right-to-left so earlier offsets stay valid. Spans fully contained in an already-replaced span
   are skipped; partial overlaps: keep the higher-confidence span, skip the other.
-- Allow-routed and allow-disposed decisions leave text untouched.
+- **Repeat scrub (fail closed, per `context/status/integration-risks.md` finding 2):** after
+  offset replacement, any remaining literal occurrence of a redacted span's text (length ≥4
+  chars) elsewhere in the text is replaced with that span's same token — the detector may return
+  only the first occurrence's offsets.
+- Allow-routed and allow-disposed decisions leave text untouched (including literal repeats).
 
 Tests: detector with a stubbed `fetchImpl` covering both response shapes + missing-offsets path +
 duplicate entity text mapping to two occurrences + non-2xx throw; redactor covering placeholder
@@ -101,7 +105,10 @@ partial-overlap by confidence, timeout-redacts, allow untouched.
 
 Tests: run the CLI via `child_process.execFile(process.execPath, ...)` against a 3-transcript
 fixture (include one duplicated planted value and one below-floor confidence case by choosing
-values whose pseudo-confidence lands < 0.35 — compute in the test, don't guess); assert redacted
+values whose pseudo-confidence lands < 0.35 — compute in the test, don't guess; Track B has
+pre-measured real-dataset cases in `context/status/integration-risks.md` finding 3: `t24`/address
+0.3025 and `t15`/phone 0.3099 are below-floor, and `t16`/`@rmoyer-dev` at 0.8328 proves the
+contextual rule — reuse those values in fixtures where convenient); assert redacted
 output shape, placeholders present, planted high-confidence values absent from redacted text,
 ledger verifies ok, exit codes. README: 15 lines max — usage, mock vs live, env vars.
 

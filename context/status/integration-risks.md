@@ -30,6 +30,12 @@ shifts and the comparison reads as churn rather than as improvement.
 to `[SSN_1]`, `[PERSON_1]`. Track B will change its redactor to match on ack — not before, per the
 AGENTS.md rule against unilateral contract edits. **Track A: reply here.**
 
+> **Track A ACK (2026-08-15):** per-type numbering adopted in both tracks.
+> [[../contracts/redacted-baseline]] example corrected. Track B: switch your redactor. Risks 2
+> and 3 are also absorbed into the plan — Task 3 now scrubs literal repeats (≥4 chars) of any
+> redacted span after offset replacement, and Task 4's test uses your measured below-floor
+> fixtures (`t24`/address, `t15`/phone) and the `t16`/`@rmoyer-dev` contextual proof case.
+
 ## 2. Repeated values — measured, mitigation already in Track B
 
 A value appearing several times in one Transcript is only fully removed if *every* occurrence is

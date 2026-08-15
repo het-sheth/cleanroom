@@ -13,7 +13,9 @@ Producer: Track B (Task 2), via Pioneer at default `threshold: 0.5`.
 {"id": "t01", "redacted_text": "...", "detections": [{"type": "ssn", "text": "523-04-1187", "start": 120, "end": 131, "confidence": 0.83}]}
 ```
 
-Placeholders are typed and indexed: `[SSN_1]`, `[PERSON_2]`.
+Placeholders are typed and indexed **per entity type**: the first person is `[PERSON_1]`, the
+first SSN `[SSN_1]`, the second person `[PERSON_2]`. (Corrected 2026-08-15 per
+[[../status/integration-risks]] finding 1 — both tracks now use per-type numbering.)
 
 `data/baseline_metrics.json`: per entity type, planted-caught vs planted-missed counts, computed
 against [[contracts/transcripts-jsonl]] ground truth. This is the demo's BEFORE number; the AFTER
