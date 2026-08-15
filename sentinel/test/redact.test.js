@@ -247,6 +247,72 @@ test('repeat scrub does not touch allow-routed spans', () => {
   assert.equal(redactedText, text);
 });
 
+test('consult route with null disposition fails closed to redact (ADR 0003)', () => {
+  const text = 'contact is Morgan Reyes';
+  const start = text.indexOf('Morgan Reyes');
+  const decisions = [
+    decision({
+      type: 'person',
+      start,
+      end: start + 'Morgan Reyes'.length,
+      route: 'consult',
+      disposition: null,
+    }),
+  ];
+
+  const { redactedText } = applyDispositions(text, decisions);
+  assert.equal(redactedText, 'contact is [PERSON_1]');
+});
+
+test('consult route with undefined disposition fails closed to redact (ADR 0003)', () => {
+  const text = 'contact is Priya Nair';
+  const start = text.indexOf('Priya Nair');
+  const d = decision({
+    type: 'person',
+    start,
+    end: start + 'Priya Nair'.length,
+    route: 'consult',
+  });
+  delete d.disposition;
+
+  const { redactedText } = applyDispositions(text, [d]);
+  assert.equal(redactedText, 'contact is [PERSON_1]');
+});
+
+test('consult route with an unrecognized disposition value fails closed to redact', () => {
+  const text = 'contact is Sam Okafor';
+  const start = text.indexOf('Sam Okafor');
+  const decisions = [
+    decision({
+      type: 'person',
+      start,
+      end: start + 'Sam Okafor'.length,
+      route: 'consult',
+      disposition: 'garbage',
+    }),
+  ];
+
+  const { redactedText } = applyDispositions(text, decisions);
+  assert.equal(redactedText, 'contact is [PERSON_1]');
+});
+
+test('an unrecognized route string fails closed to redact', () => {
+  const text = 'contact is Lee Park';
+  const start = text.indexOf('Lee Park');
+  const decisions = [
+    decision({
+      type: 'person',
+      start,
+      end: start + 'Lee Park'.length,
+      route: 'mystery-route',
+      disposition: null,
+    }),
+  ];
+
+  const { redactedText } = applyDispositions(text, decisions);
+  assert.equal(redactedText, 'contact is [PERSON_1]');
+});
+
 test('applyDispositions does not mutate the caller-supplied decision objects', () => {
   const text = 'name is Dana';
   const start = text.indexOf('Dana');

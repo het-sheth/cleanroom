@@ -5,20 +5,24 @@
 const REPEAT_SCRUB_MIN_LENGTH = 4;
 
 /**
- * A decision's final action is "redact" iff the route is auto-redact, or
- * the route is consult and the disposition resolved to redact, timeout
- * (ADR 0003 fail-closed), or pseudonymize (replaced with the same
- * placeholder token as redact, for now — no separate pseudonym generation
- * yet).
+ * A decision's final action defaults to "redact" per ADR 0003 — any span
+ * whose final action is unresolved is redacted, never allowed through.
+ * `allow-observed` routes allow. `auto-redact` routes always redact.
+ * `consult` routes redact unless the disposition explicitly resolved to
+ * `allow` — `redact`, `timeout` (the ADR 0003 fail-closed case), and
+ * `pseudonymize` (replaced with the same placeholder token as redact, for
+ * now — no separate pseudonym generation yet) all redact, and so does any
+ * other disposition value (null, undefined, unrecognized). Any route
+ * string other than the three known ones also fails closed to redact.
  */
 function shouldRedact(decision) {
+  if (decision.route === 'allow-observed') return false;
   if (decision.route === 'auto-redact') return true;
   if (decision.route === 'consult') {
-    return ['redact', 'timeout', 'pseudonymize'].includes(
-      decision.disposition,
-    );
+    return decision.disposition !== 'allow';
   }
-  return false;
+  // Unrecognized route — fail closed rather than silently allow.
+  return true;
 }
 
 function overlaps(a, b) {
