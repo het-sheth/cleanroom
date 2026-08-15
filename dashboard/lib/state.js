@@ -1,6 +1,14 @@
-// Builds the /api/state payload by re-reading the scrub output directory on every call.
-// Nothing is cached: a demo run that appends to redacted.jsonl / ledger.jsonl shows up on the
-// next 2s poll. Missing or half-written files degrade to an empty state, never an exception.
+// Builds the /api/state payload from the scrub output directory.
+//
+// TRUST BOUNDARY. redacted.jsonl carries `detections[].text` — the raw PII span, verbatim —
+// so a run can be scored against transcripts.jsonl ground truth (sentinel/README.md). That
+// field must never cross the HTTP boundary. Records are projected onto an explicit field
+// whitelist here, at the boundary, so pointing the server at a real output directory cannot
+// leak PII regardless of deploy config. Ledger rows carry span_hmac, not spans, and pass
+// through untouched so the browser can verify the hash chain byte-for-byte.
+//
+// Reads are memoised on (mtime, size) of both files: a demo run that appends to either shows
+// up on the next 2s poll, but idle polls do not re-read and re-hash the whole chain.
 
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -9,6 +17,26 @@ import { verifyChain } from './chain.js';
 
 const ROUTES = ['auto-redact', 'consult', 'allow-observed'];
 const DISPOSITIONS = ['redact', 'pseudonymize', 'allow', 'timeout'];
+
+// Whitelists, not blacklists: anything not named here never reaches the client.
+const TRANSCRIPT_FIELDS = ['id', 'redacted_text'];
+const DETECTION_FIELDS = ['type', 'start', 'end', 'confidence', 'route', 'disposition', 'token', 'placeholder', 'span_hmac'];
+
+function project(record, fields) {
+  const out = {};
+  for (const field of fields) {
+    if (record && Object.hasOwn(record, field)) out[field] = record[field];
+  }
+  return out;
+}
+
+/** Strips the raw PII span (and anything else unrecognised) off a redacted.jsonl record. */
+function safeTranscript(record) {
+  const out = project(record, TRANSCRIPT_FIELDS);
+  const detections = Array.isArray(record?.detections) ? record.detections : [];
+  out.detections = detections.map((d) => project(d, DETECTION_FIELDS));
+  return out;
+}
 
 function readJsonl(path) {
   const source = { path, present: false, records: 0, parse_errors: [], mtime_ms: null };
@@ -66,22 +94,44 @@ function summarize(ledger) {
   };
 }
 
+function fileSignature(path) {
+  try {
+    const st = statSync(path);
+    return `${st.mtimeMs}:${st.size}`;
+  } catch {
+    return 'absent';
+  }
+}
+
+/** One entry — the server watches a single directory. */
+let cache = null;
+
 /**
  * @param {string} dir directory holding redacted.jsonl and ledger.jsonl.
  * @returns {object} the full dashboard state; safe to call when the directory does not exist.
  */
 export function buildState(dir) {
-  const redacted = readJsonl(join(dir, 'redacted.jsonl'));
-  const ledger = readJsonl(join(dir, 'ledger.jsonl'));
+  const redactedPath = join(dir, 'redacted.jsonl');
+  const ledgerPath = join(dir, 'ledger.jsonl');
+  const signature = `${dir}|${fileSignature(redactedPath)}|${fileSignature(ledgerPath)}`;
 
-  return {
-    ok: true,
-    dir,
-    generated_at: new Date().toISOString(),
-    sources: { redacted: redacted.source, ledger: ledger.source },
-    transcripts: redacted.records,
-    ledger: ledger.records,
-    integrity: verifyChain(ledger.records),
-    summary: summarize(ledger.records),
-  };
+  if (!cache || cache.signature !== signature) {
+    const redacted = readJsonl(redactedPath);
+    const ledger = readJsonl(ledgerPath);
+    cache = {
+      signature,
+      state: {
+        ok: true,
+        dir,
+        generated_at: null,
+        sources: { redacted: redacted.source, ledger: ledger.source },
+        transcripts: redacted.records.map(safeTranscript),
+        ledger: ledger.records,
+        integrity: verifyChain(ledger.records),
+        summary: summarize(ledger.records),
+      },
+    };
+  }
+
+  return { ...cache.state, generated_at: new Date().toISOString() };
 }

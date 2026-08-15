@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -95,6 +95,72 @@ test('/api/state over the fixtures serves a verifying chain and the wedge count'
     assert.ok(state.summary.observed_not_acted > 0);
     assert.ok(state.summary.by_type.length > 0);
     assert.equal(state.summary.dispositions.timeout, 1);
+  });
+});
+
+test('/api/state never serves the raw PII span from detections[].text', async () => {
+  const RAW_EMAIL = 'zzsynthetic.canary@nowhere-canary.invalid';
+  const RAW_PHONE = '(555) 867-5309-CANARY';
+  const dir = mkdtempSync(join(tmpdir(), 'cleanroom-pii-'));
+  writeFileSync(
+    join(dir, 'redacted.jsonl'),
+    `${JSON.stringify({
+      id: 'c01',
+      redacted_text: 'user: reach me at [EMAIL_1] or [PHONE_1].',
+      detections: [
+        { type: 'email', text: RAW_EMAIL, start: 18, end: 27, confidence: 0.94 },
+        { type: 'phone', text: RAW_PHONE, start: 31, end: 40, confidence: 0.88 },
+      ],
+      // an unexpected raw-bearing field on a real run must not pass through either
+      raw_text: `user: reach me at ${RAW_EMAIL} or ${RAW_PHONE}.`,
+    })}\n`,
+  );
+
+  await withServer(dir, async (base) => {
+    const res = await fetch(`${base}/api/state`);
+    assert.equal(res.status, 200);
+    const body = await res.text();
+
+    assert.ok(!body.includes(RAW_EMAIL), 'raw email span leaked into /api/state');
+    assert.ok(!body.includes(RAW_PHONE), 'raw phone span leaked into /api/state');
+    assert.ok(!body.includes('"text"'), 'a detections[].text field leaked into /api/state');
+    assert.ok(!body.includes('raw_text'), 'an unknown raw-bearing field leaked into /api/state');
+
+    // what the UI needs is still there
+    const [transcript] = (await (await fetch(`${base}/api/state`)).json()).transcripts;
+    assert.equal(transcript.id, 'c01');
+    assert.match(transcript.redacted_text, /\[EMAIL_1\]/);
+    assert.deepEqual(transcript.detections[0], { type: 'email', start: 18, end: 27, confidence: 0.94 });
+  });
+});
+
+test('/api/state serves no raw spans over the shipped fixtures either', async () => {
+  // allow-observed spans deliberately survive in redacted_text — that is the product's whole
+  // wedge, and redacted_text is the field cleared to cross the boundary. The leak this guards
+  // against is detections[].text adding raw spans the redacted text does not already contain.
+  const rawSpans = readFileSync(join(FIXTURES, 'redacted.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+    .flatMap((rec) => rec.detections.map((d) => d.text).filter((t) => !rec.redacted_text.includes(t)));
+  assert.ok(rawSpans.length > 0, 'fixture has no detections to check against');
+
+  await withServer(FIXTURES, async (base) => {
+    const body = await (await fetch(`${base}/api/state`)).text();
+    for (const span of rawSpans) assert.ok(!body.includes(span), `raw span leaked: ${span}`);
+  });
+});
+
+test('/api/state reuses the parsed state until a file changes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cleanroom-cache-'));
+  writeFileSync(join(dir, 'ledger.jsonl'), '{"trace_id":"t01","route":"allow-observed"}\n');
+  await withServer(dir, async (base) => {
+    const first = await (await fetch(`${base}/api/state`)).json();
+    assert.equal(first.ledger.length, 1);
+
+    writeFileSync(join(dir, 'ledger.jsonl'), '{"trace_id":"t01","route":"allow-observed"}\n{"trace_id":"t02","route":"consult"}\n');
+    const second = await (await fetch(`${base}/api/state`)).json();
+    assert.equal(second.ledger.length, 2, 'appended rows must appear on the next poll');
   });
 });
 

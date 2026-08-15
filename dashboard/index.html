@@ -167,7 +167,7 @@
       <div class="body">
         <div class="panes">
           <div class="pane">
-            <h3>Before — raw transcript (inside the trust boundary)</h3>
+            <h3>Before — what was detected (types only; raw spans stay inside the boundary)</h3>
             <pre id="pane-before"></pre>
           </div>
           <div class="pane">
@@ -473,9 +473,11 @@
         continue;
       }
       after += '<mark class="ph">' + esc(part.token) + '</mark>';
+      // The raw span never leaves the trust boundary — the server strips detections[].text,
+      // so "before" shows the detected entity type, never the value.
       var detection = detectionFor(transcript, part.type, part.ordinal);
-      before += detection && typeof detection.text === 'string'
-        ? '<mark class="raw">' + esc(detection.text) + '</mark>'
+      before += detection
+        ? '<mark class="raw">&lt;' + esc(String(detection.type).toLowerCase()) + '&gt;</mark>'
         : '<mark class="ph">' + esc(part.token) + '</mark>';
     }
     $('pane-before').innerHTML = before || '<span class="empty">empty transcript</span>';

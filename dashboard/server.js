@@ -88,7 +88,9 @@ export function createServer({ dir }) {
         send(res, 404, 'text/plain; charset=utf-8', 'not found\n');
       }
     } catch (err) {
-      send(res, 500, 'application/json; charset=utf-8', JSON.stringify({ ok: false, error: err.message }));
+      // err.message can carry filesystem paths; anonymous callers get a generic message.
+      process.stderr.write(`[cleanroom] ${req.method} ${path} failed: ${err?.stack ?? err}\n`);
+      send(res, 500, 'application/json; charset=utf-8', JSON.stringify({ ok: false, error: 'internal error' }));
     }
   });
 }
