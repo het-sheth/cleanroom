@@ -259,6 +259,60 @@ test('scrub accepts --model in mock mode (parsed, no error); mock-mode ledger ro
   }
 });
 
+// ---- I3: a mid-file failure names the transcript --------------------------
+
+test('I3: a routing failure names the offending transcript id in the error', async () => {
+  const dir = tempDir('sentinel-cli-badhit-');
+  const inputPath = path.join(dir, 'transcripts.jsonl');
+  const lines = [
+    { id: 't01', text: `SSN ${T24_SSN} on file.`, planted: [{ type: 'ssn', value: T24_SSN }] },
+    // No `type` on the planted entry -> a detection with type undefined,
+    // which policy.route rejects. The CLI must say which transcript died.
+    { id: 't99', text: `SSN ${T24_SSN} on file.`, planted: [{ value: T24_SSN }] },
+  ];
+  fs.writeFileSync(inputPath, lines.map((l) => `${JSON.stringify(l)}\n`).join(''));
+  const outDir = tempDir('sentinel-cli-out-');
+
+  await assert.rejects(
+    () => runCli(['scrub', inputPath, '--out', outDir, '--mock']),
+    (err) => {
+      assert.notEqual(err.code, 0);
+      assert.match(err.stderr, /t99/, 'error must name the failing transcript');
+      assert.match(err.stderr, /entityType must be a string/);
+      return true;
+    },
+  );
+});
+
+// ---- I4: re-running into the same --out ----------------------------------
+
+test('I4: re-running scrub into the same --out reports rows appended this run, not just the total', async () => {
+  const { inputPath } = buildFixture();
+  const outDir = tempDir('sentinel-cli-out-');
+
+  const first = await runCli(['scrub', inputPath, '--out', outDir, '--mock']);
+  assert.match(first.stdout, /ledger rows: 6 \(\+6 this run\)/);
+
+  const second = await runCli(['scrub', inputPath, '--out', outDir, '--mock']);
+  assert.match(
+    second.stdout,
+    /ledger rows: 12 \(\+6 this run\)/,
+    'cumulative ledger rows must be reported alongside this run\'s appended count',
+  );
+
+  // redacted.jsonl is rewritten, not appended — which is exactly why the
+  // cumulative ledger count alone was misleading.
+  const redactedLines = fs
+    .readFileSync(path.join(outDir, 'redacted.jsonl'), 'utf8')
+    .trim()
+    .split('\n');
+  assert.equal(redactedLines.length, 3);
+
+  const rows = new Ledger(path.join(outDir, 'ledger.jsonl')).rows();
+  assert.equal(rows.length, 12);
+  assert.deepEqual(Ledger.verify(rows), { ok: true });
+});
+
 test('exits non-zero on an unrecognized subcommand', async () => {
   await assert.rejects(
     () => runCli(['bogus']),

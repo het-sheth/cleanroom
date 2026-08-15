@@ -74,8 +74,11 @@ test('normalizes primary shape: dict-of-types entities with offsets', async () =
       data: {
         entities: {
           person: [{ text: 'Jane Doe', confidence: 0.98, start: 8, end: 16 }],
+          // end is 36, not 37: 37 would include the trailing '.', i.e. an
+          // offset that disagrees with the reported span text — which the
+          // detector now re-locates rather than trusts (see the I2 tests).
           email: [
-            { text: 'jane@example.com', confidence: 0.95, start: 20, end: 37 },
+            { text: 'jane@example.com', confidence: 0.95, start: 20, end: 36 },
           ],
         },
       },
@@ -89,7 +92,7 @@ test('normalizes primary shape: dict-of-types entities with offsets', async () =
       type: 'email',
       text: 'jane@example.com',
       start: 20,
-      end: 37,
+      end: 36,
       confidence: 0.95,
     },
   ]);
@@ -162,6 +165,140 @@ test('duplicate entity text maps to successive occurrences in order', async () =
   assert.equal(spans[0].end, 14);
   assert.equal(spans[1].start, 16);
   assert.equal(spans[1].end, 19);
+});
+
+// ---- C1: unlocatable spans must never carry a -1 "range" -------------------
+
+test('C1: a span whose text cannot be located carries null offsets and an unlocatable flag, never -1', async () => {
+  const text = 'SSN 523-04-0002 on file.';
+  // Two hits for a string the transcript contains once: the second exhausts
+  // the occurrence index, which is exactly how live Pioneer reaches this path.
+  const fetchImpl = fakeFetch(200, {
+    entities: [
+      { type: 'ssn', text: '523-04-0002', confidence: 0.9 },
+      { type: 'ssn', text: '523-04-0002', confidence: 0.85 },
+    ],
+  });
+
+  const spans = await detect(text, { apiKey: 'k', fetchImpl });
+  assert.equal(spans.length, 2);
+  assert.equal(spans[0].start, 4);
+  assert.equal(spans[0].end, 15);
+  assert.equal('unlocatable' in spans[0], false);
+
+  assert.notEqual(spans[1].start, -1, 'must not emit a -1 sentinel as a range');
+  assert.notEqual(spans[1].end, -1);
+  assert.equal(spans[1].start, null);
+  assert.equal(spans[1].end, null);
+  assert.equal(spans[1].unlocatable, true);
+  assert.equal(spans[1].text, '523-04-0002');
+});
+
+test('C1: a span text absent from the transcript entirely is flagged unlocatable', async () => {
+  const text = 'Contact jane@example.com for details.';
+  const fetchImpl = fakeFetch(200, {
+    entities: [{ type: 'email', text: 'JANE@EXAMPLE.COM', confidence: 0.9 }],
+  });
+
+  const spans = await detect(text, { apiKey: 'k', fetchImpl });
+  assert.equal(spans[0].unlocatable, true);
+  assert.equal(spans[0].start, null);
+  assert.equal(spans[0].end, null);
+});
+
+// ---- I2: offsets must agree with the reported span text --------------------
+
+test('I2: offsets that do not select the reported span text are re-located by search', async () => {
+  const text = 'SSN 523-04-0002 on file.';
+  // Drifted by 4 — e.g. offsets computed against a normalized copy. Trusting
+  // them verbatim would redact "SSN 523-04" and leave "0002" in the output.
+  const fetchImpl = fakeFetch(200, {
+    entities: [
+      { type: 'ssn', text: '523-04-0002', start: 0, end: 11, confidence: 0.9 },
+    ],
+  });
+
+  const spans = await detect(text, { apiKey: 'k', fetchImpl });
+  assert.equal(spans[0].start, 4);
+  assert.equal(spans[0].end, 15);
+  assert.equal(text.slice(spans[0].start, spans[0].end), spans[0].text);
+});
+
+test('I2: offsets that agree with the reported span text are used verbatim', async () => {
+  const text = 'My name is Bob. Bob likes tea.';
+  // The second occurrence's offsets must survive, not be re-searched to the first.
+  const fetchImpl = fakeFetch(200, {
+    entities: [{ type: 'person', text: 'Bob', start: 16, end: 19, confidence: 0.9 }],
+  });
+
+  const spans = await detect(text, { apiKey: 'k', fetchImpl });
+  assert.equal(spans[0].start, 16);
+  assert.equal(spans[0].end, 19);
+});
+
+test('I2: out-of-range offsets fall back to search rather than slicing past the end', async () => {
+  const text = 'Call 555-1234 now.';
+  const fetchImpl = fakeFetch(200, {
+    entities: [
+      { type: 'phone', text: '555-1234', start: 900, end: 908, confidence: 0.8 },
+    ],
+  });
+
+  const spans = await detect(text, { apiKey: 'k', fetchImpl });
+  assert.equal(spans[0].start, 5);
+  assert.equal(spans[0].end, 13);
+});
+
+// ---- I3: malformed hits are rejected at the boundary -----------------------
+
+test('I3: a hit with neither type nor label is rejected at the detector boundary', async () => {
+  const fetchImpl = fakeFetch(200, {
+    entities: [{ text: 'Bob', confidence: 0.9 }],
+  });
+  await assert.rejects(
+    () => detect('My name is Bob.', { apiKey: 'k', fetchImpl }),
+    (err) => {
+      assert.match(err.message, /malformed Pioneer hit/);
+      assert.match(err.message, /entity type/);
+      return true;
+    },
+  );
+});
+
+test('I3: a hit with neither confidence nor score is rejected at the detector boundary', async () => {
+  const fetchImpl = fakeFetch(200, {
+    result: { data: { entities: { ssn: [{ text: '523-04-0002', start: 4, end: 15 }] } } },
+  });
+  await assert.rejects(
+    () => detect('SSN 523-04-0002 on file.', { apiKey: 'k', fetchImpl }),
+    (err) => {
+      assert.match(err.message, /malformed Pioneer hit/);
+      assert.match(err.message, /confidence/);
+      // Errors reach stderr — they must not carry the span text.
+      assert.equal(err.message.includes('523-04-0002'), false);
+      return true;
+    },
+  );
+});
+
+test('I3: a hit with an out-of-range confidence is rejected at the detector boundary', async () => {
+  const fetchImpl = fakeFetch(200, {
+    entities: [{ type: 'ssn', text: '523-04-0002', confidence: 42 }],
+  });
+  await assert.rejects(
+    () => detect('SSN 523-04-0002 on file.', { apiKey: 'k', fetchImpl }),
+    /malformed Pioneer hit/,
+  );
+});
+
+test('I3: a hit with no span text is rejected at the detector boundary', async () => {
+  const fetchImpl = fakeFetch(200, {
+    entities: [{ type: 'ssn', confidence: 0.9 }],
+  });
+  await assert.rejects(
+    () => detect('SSN 523-04-0002 on file.', { apiKey: 'k', fetchImpl }),
+    /malformed Pioneer hit/,
+  );
 });
 
 test('unrecognized response shape throws with body JSON in message', async () => {

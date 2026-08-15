@@ -313,6 +313,117 @@ test('an unrecognized route string fails closed to redact', () => {
   assert.equal(redactedText, 'contact is [PERSON_1]');
 });
 
+// ---- C1: spans without usable offsets must still be redacted --------------
+
+test('C1: a {-1,-1} span is redacted by literal text, not spliced at -1 (ADR 0003)', () => {
+  const text = 'SSN 523-04-0002 on file.';
+  const decisions = [
+    decision({
+      type: 'ssn',
+      text: '523-04-0002',
+      start: -1,
+      end: -1,
+    }),
+  ];
+
+  const { redactedText, replacements, unresolved } = applyDispositions(text, decisions);
+  assert.equal(
+    redactedText.includes('523-04-0002'),
+    false,
+    'detected PII must not survive into the redacted text',
+  );
+  assert.equal(redactedText, 'SSN [SSN_1] on file.');
+  assert.deepEqual(replacements, [], 'a -1 span has no offset replacement to report');
+  assert.deepEqual(unresolved, [{ type: 'ssn', token: '[SSN_1]', scrubbed: true }]);
+});
+
+test('C1: a null-offset unlocatable span is redacted by literal text', () => {
+  const text = 'SSN 523-04-0002 on file, and 523-04-0002 again.';
+  const decisions = [
+    decision({
+      type: 'ssn',
+      text: '523-04-0002',
+      start: null,
+      end: null,
+      unlocatable: true,
+    }),
+  ];
+
+  const { redactedText, unresolved } = applyDispositions(text, decisions);
+  assert.equal(redactedText, 'SSN [SSN_1] on file, and [SSN_1] again.');
+  assert.equal(unresolved.length, 1);
+  assert.equal(unresolved[0].scrubbed, true);
+});
+
+test('C1: an unlocatable span shares the token of a positioned span with the same type and text', () => {
+  const text = 'SSN 523-04-0002 on file, and 523-04-0002 again.';
+  const first = text.indexOf('523-04-0002');
+  const decisions = [
+    decision({ type: 'ssn', text: '523-04-0002', start: first, end: first + 11 }),
+    decision({
+      type: 'ssn',
+      text: '523-04-0002',
+      start: null,
+      end: null,
+      unlocatable: true,
+    }),
+  ];
+
+  const { redactedText, unresolved } = applyDispositions(text, decisions);
+  assert.equal(redactedText, 'SSN [SSN_1] on file, and [SSN_1] again.');
+  assert.equal(unresolved[0].token, '[SSN_1]');
+});
+
+test('C1: an unlocatable span whose text never occurs literally is reported unscrubbed', () => {
+  const text = 'Contact jane@example.com for details.';
+  const decisions = [
+    decision({
+      type: 'email',
+      text: 'JANE@EXAMPLE.COM',
+      start: null,
+      end: null,
+      unlocatable: true,
+    }),
+  ];
+
+  const { redactedText, unresolved } = applyDispositions(text, decisions);
+  assert.equal(redactedText, text, 'nothing matched literally, so nothing changed');
+  assert.deepEqual(unresolved, [
+    { type: 'email', token: '[EMAIL_1]', scrubbed: false },
+  ]);
+});
+
+test('C1: an unlocatable span routed to allow is not redacted', () => {
+  const text = 'org Acme Corp is fine';
+  const decisions = [
+    decision({
+      type: 'organization',
+      text: 'Acme Corp',
+      start: null,
+      end: null,
+      unlocatable: true,
+      route: 'consult',
+      disposition: 'allow',
+    }),
+  ];
+
+  const { redactedText, unresolved } = applyDispositions(text, decisions);
+  assert.equal(redactedText, text);
+  assert.deepEqual(unresolved, []);
+});
+
+test('C1: a -1 span does not swallow a real overlapping span', () => {
+  const text = 'Alice met Bob at noon.';
+  const bob = text.indexOf('Bob');
+  const decisions = [
+    decision({ type: 'ssn', text: '523-04-0002', start: -1, end: -1 }),
+    decision({ type: 'person', text: 'Bob', start: bob, end: bob + 3 }),
+  ];
+
+  const { redactedText } = applyDispositions(text, decisions);
+  assert.equal(redactedText, 'Alice met [PERSON_1] at noon.');
+});
+
 test('applyDispositions does not mutate the caller-supplied decision objects', () => {
   const text = 'name is Dana';
   const start = text.indexOf('Dana');

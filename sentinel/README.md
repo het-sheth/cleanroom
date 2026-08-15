@@ -12,6 +12,11 @@ Reads `{id, text, planted}` lines, routes each detection through the policy, app
 redaction (ADR 0003), and writes `<out>/redacted.jsonl` + `<out>/ledger.jsonl` (hash-chained
 decision log) plus a per-type summary and ledger verify result to stdout.
 
+`<out>/redacted.jsonl` is an **eval artifact, not a safe export**: its `detections[].text` field
+carries the raw PII span verbatim so the run can be scored against `transcripts.jsonl` ground truth
+(the shape is fixed by `context/contracts/redacted-baseline.md`). Only the `redacted_text` field is
+safe to hand across a trust boundary.
+
 **Mock mode** (`--mock`, or auto-selected with a warning when `PIONEER_API_KEY` is unset): detects
 from `planted` ground truth, deterministic, no live calls. **Live mode**: calls Pioneer via
 `lib/detector.js`. `--model <id>` overrides the model id used in live mode (e.g. to A/B a deployed

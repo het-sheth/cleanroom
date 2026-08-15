@@ -164,7 +164,7 @@ function readTranscripts(inputPath) {
   return transcripts;
 }
 
-function printSummary(summary, ledgerRows, verifyResult) {
+function printSummary(summary, ledgerRows, verifyResult, { rowsAppended, unresolvedSpans }) {
   const header = ['type', 'detections', 'auto-redacted', 'consulted', 'allow-observed'];
   console.log('\nSummary (per entity type):');
   console.log(header.join('\t'));
@@ -174,7 +174,11 @@ function printSummary(summary, ledgerRows, verifyResult) {
       [type, s.detections, s.autoRedacted, s.consulted, s.allowObserved].join('\t'),
     );
   }
-  console.log(`\nledger rows: ${ledgerRows.length}`);
+  // The ledger is append-only and survives re-runs into the same --out,
+  // while redacted.jsonl is rewritten each run — so the cumulative row count
+  // alone disagrees with the per-run table above. Print both.
+  console.log(`\nledger rows: ${ledgerRows.length} (+${rowsAppended} this run)`);
+  console.log(`unresolved spans (redacted by literal text only): ${unresolvedSpans}`);
   console.log(
     `ledger verify: ${verifyResult.ok ? 'ok' : `FAILED at row ${verifyResult.badIndex}`}`,
   );
@@ -218,73 +222,108 @@ async function scrub(argv) {
   const redactedPath = path.join(args.out, 'redacted.jsonl');
   const ledgerPath = path.join(args.out, 'ledger.jsonl');
   const ledger = new Ledger(ledgerPath);
+  // The ledger chain may already exist from an earlier run into this --out.
+  const rowsBefore = ledger.rows().length;
 
   const summary = {};
   const outputLines = [];
+  let unresolvedSpans = 0;
 
   for (const transcript of transcripts) {
     const { id, text } = transcript;
-    const rawDetections = mockMode
-      ? mockDetect(transcript)
-      : await detect(text, { apiKey, modelId });
+    // Anything that throws below (a malformed detector hit, a policy
+    // TypeError) aborts the run with the ledger already appended for every
+    // prior transcript — name the transcript so that is diagnosable mid-demo.
+    try {
+      const rawDetections = mockMode
+        ? mockDetect(transcript)
+        : await detect(text, { apiKey, modelId });
 
-    const decisions = rawDetections.map((d) => {
-      const decidedRoute = route(d.type, d.confidence, policy);
-      // Band consult isn't wired yet (Task 5): every consult resolves as a
-      // timeout, which redact.js's fail-closed rule (ADR 0003) turns into a
-      // redaction rather than a silent allow.
-      const disposition = decidedRoute === 'consult' ? 'timeout' : null;
-      return { ...d, route: decidedRoute, disposition };
-    });
-
-    for (const d of decisions) {
-      ledger.append({
-        trace_id: id,
-        span_hmac: spanHmac(salt, d.text),
-        entity_type: d.type,
-        confidence: d.confidence,
-        route: d.route,
-        disposition: d.disposition,
-        policy_version: policy.version,
-        model_id: mockMode ? 'mock' : modelId,
-        prompt_hash: null,
+      const decisions = rawDetections.map((d) => {
+        const decidedRoute = route(d.type, d.confidence, policy);
+        // Band consult isn't wired yet (Task 5): every consult resolves as a
+        // timeout, which redact.js's fail-closed rule (ADR 0003) turns into a
+        // redaction rather than a silent allow.
+        const disposition = decidedRoute === 'consult' ? 'timeout' : null;
+        return { ...d, route: decidedRoute, disposition };
       });
 
-      const s =
-        summary[d.type] ??
-        (summary[d.type] = {
-          detections: 0,
-          autoRedacted: 0,
-          consulted: 0,
-          allowObserved: 0,
-        });
-      s.detections++;
-      if (d.route === 'auto-redact') s.autoRedacted++;
-      else if (d.route === 'consult') s.consulted++;
-      else if (d.route === 'allow-observed') s.allowObserved++;
-    }
-
-    const { redactedText } = applyDispositions(text, decisions);
-    outputLines.push(
-      JSON.stringify({
-        id,
-        redacted_text: redactedText,
-        detections: decisions.map((d) => ({
-          type: d.type,
-          text: d.text,
-          start: d.start,
-          end: d.end,
+      for (const d of decisions) {
+        ledger.append({
+          trace_id: id,
+          span_hmac: spanHmac(salt, d.text),
+          entity_type: d.type,
           confidence: d.confidence,
-        })),
-      }),
-    );
+          route: d.route,
+          disposition: d.disposition,
+          policy_version: policy.version,
+          model_id: mockMode ? 'mock' : modelId,
+          prompt_hash: null,
+        });
+
+        const s =
+          summary[d.type] ??
+          (summary[d.type] = {
+            detections: 0,
+            autoRedacted: 0,
+            consulted: 0,
+            allowObserved: 0,
+          });
+        s.detections++;
+        if (d.route === 'auto-redact') s.autoRedacted++;
+        else if (d.route === 'consult') s.consulted++;
+        else if (d.route === 'allow-observed') s.allowObserved++;
+      }
+
+      const { redactedText, unresolved } = applyDispositions(text, decisions);
+
+      // A span the detector could not locate was redacted by literal text
+      // only; the ledger row still reads `auto-redact`, so say so here rather
+      // than let a possible leak pass silently (ADR 0003). Entity type only —
+      // never the span text, which is the PII.
+      for (const u of unresolved) {
+        unresolvedSpans++;
+        console.error(
+          `warning: ${id}: ${u.type} span had no usable offsets — ` +
+            (u.scrubbed
+              ? 'redacted by literal text match'
+              : 'ITS TEXT DOES NOT OCCUR LITERALLY IN THE TRANSCRIPT; nothing was removed for it'),
+        );
+      }
+
+      outputLines.push(
+        JSON.stringify({
+          id,
+          redacted_text: redactedText,
+          // NOTE: `detections[].text` is the raw PII span, on purpose — this
+          // file is the eval artifact scored against transcripts.jsonl ground
+          // truth (context/contracts/redacted-baseline.md binds this shape).
+          // It is NOT the redacted export that crosses the trust boundary;
+          // only `redacted_text` is safe to hand onward.
+          detections: decisions.map((d) => ({
+            type: d.type,
+            text: d.text,
+            start: d.start,
+            end: d.end,
+            confidence: d.confidence,
+          })),
+        }),
+      );
+    } catch (err) {
+      throw new Error(`transcript ${id ?? '<no id>'}: ${err.message}`, {
+        cause: err,
+      });
+    }
   }
 
   fs.writeFileSync(redactedPath, outputLines.map((l) => `${l}\n`).join(''));
 
   const ledgerRows = ledger.rows();
   const verifyResult = Ledger.verify(ledgerRows);
-  printSummary(summary, ledgerRows, verifyResult);
+  printSummary(summary, ledgerRows, verifyResult, {
+    rowsAppended: ledgerRows.length - rowsBefore,
+    unresolvedSpans,
+  });
 }
 
 /**
@@ -362,12 +401,27 @@ async function finetune(argv) {
   }
 
   const generated = await generateTrainingData({ apiKey, labels, domainDescription });
+
+  // Claim the ADR 0005 1-job cap BEFORE the irreversible launch. Persisting
+  // it afterwards meant a throw in launchFineTune (or in the mkdirSync that
+  // used to sit between them) left the job existing with the cap unspent.
+  // /generate is cheap and reversible, so the placeholder goes after it.
+  fs.mkdirSync(args.out, { recursive: true });
+  const launchedAt = new Date().toISOString();
+  fs.writeFileSync(
+    jobRecordPath,
+    `${JSON.stringify(
+      { jobId: null, status: 'launching', launchedAt, baseModel: DEFAULT_BASE_MODEL },
+      null,
+      2,
+    )}\n`,
+  );
+
   const launched = await launchFineTune({ apiKey, datasetRef: generated.datasetRef });
 
-  fs.mkdirSync(args.out, { recursive: true });
   const record = {
     jobId: launched.jobId,
-    launchedAt: new Date().toISOString(),
+    launchedAt,
     baseModel: DEFAULT_BASE_MODEL,
   };
   fs.writeFileSync(jobRecordPath, `${JSON.stringify(record, null, 2)}\n`);

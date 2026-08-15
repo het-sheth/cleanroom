@@ -21,7 +21,13 @@ const PIONEER_URL = 'https://api.pioneer.ai/inference';
  * @param {number} [opts.threshold]
  * @param {object} [opts.schema] - e.g. {entities: ["person", "email"]}
  * @param {typeof fetch} [opts.fetchImpl]
- * @returns {Promise<Array<{type: string, text: string, start: number, end: number, confidence: number}>>}
+ * A span whose text cannot be located in the transcript comes back with
+ * `{start: null, end: null, unlocatable: true}` — never a `-1` sentinel that
+ * downstream code could mistake for a real range. Malformed hits (no entity
+ * type, no span text, no usable confidence) throw here rather than failing
+ * later inside the policy router.
+ *
+ * @returns {Promise<Array<{type: string, text: string, start: number|null, end: number|null, confidence: number, unlocatable?: true}>>}
  */
 export async function detect(
   text,
@@ -59,6 +65,36 @@ export async function detect(
 }
 
 /**
+ * Reject a hit the rest of the pipeline cannot route. Without this, a hit
+ * carrying neither `type`/`label` nor `confidence`/`score` reaches
+ * `policy.route` as `undefined` and dies there with a bare `TypeError`
+ * mid-file. Failing at the boundary keeps the diagnosis local. Messages
+ * deliberately carry no span text — errors reach stderr, PII must not.
+ */
+function validateHit(type, spanText, confidence) {
+  if (typeof type !== 'string' || type === '') {
+    throw new Error(
+      'malformed Pioneer hit: missing entity type (no `type` or `label`)',
+    );
+  }
+  if (typeof spanText !== 'string' || spanText === '') {
+    throw new Error(
+      `malformed Pioneer hit (type=${type}): missing span text (no \`text\` or \`span\`)`,
+    );
+  }
+  if (
+    typeof confidence !== 'number' ||
+    Number.isNaN(confidence) ||
+    confidence < 0 ||
+    confidence > 1
+  ) {
+    throw new Error(
+      `malformed Pioneer hit (type=${type}): confidence must be a number in [0, 1] (no valid \`confidence\` or \`score\`)`,
+    );
+  }
+}
+
+/**
  * Flatten a Pioneer response body into a flat span list, searching the
  * transcript text for offsets when the response omits them.
  */
@@ -70,17 +106,35 @@ function normalize(body, text) {
     const idx = text.indexOf(spanText, searchFrom);
     const found = idx !== -1;
     occurrenceIndex.set(spanText, found ? idx + spanText.length : searchFrom);
-    return found ? { start: idx, end: idx + spanText.length } : { start: -1, end: -1 };
+    // An unlocatable span carries null offsets plus `unlocatable: true`,
+    // never the old `{start: -1, end: -1}`: -1 reads downstream as an
+    // ordinary (empty) range, so `text.slice(-1, -1)` redacted nothing and
+    // spliced the token before the last character — the detected PII
+    // reached the output intact, violating ADR 0003. redact.js keys off
+    // this flag and redacts such a span by literal text instead.
+    return found
+      ? { start: idx, end: idx + spanText.length }
+      : { start: null, end: null, unlocatable: true };
   }
 
   function normalizeHit(type, hit) {
     const spanText = hit.text ?? hit.span;
     const confidence = hit.confidence ?? hit.score;
-    const hasOffsets = hit.start != null && hit.end != null;
-    const { start, end } = hasOffsets
-      ? { start: hit.start, end: hit.end }
-      : locate(spanText);
-    return { type, text: spanText, start, end, confidence };
+    validateHit(type, spanText, confidence);
+    // Pioneer's offsets are only trusted when they actually select the span
+    // text Pioneer itself reported. Drifted offsets (byte vs UTF-16, or
+    // offsets into a normalized copy of the transcript) would otherwise make
+    // the redactor replace the wrong range and leave a PII fragment behind.
+    const hasOffsets =
+      Number.isInteger(hit.start) &&
+      Number.isInteger(hit.end) &&
+      hit.start >= 0 &&
+      hit.end > hit.start;
+    const located =
+      hasOffsets && text.slice(hit.start, hit.end) === spanText
+        ? { start: hit.start, end: hit.end }
+        : locate(spanText);
+    return { type, text: spanText, confidence, ...located };
   }
 
   // Primary shape (verified live): entities grouped by type as a dict.
