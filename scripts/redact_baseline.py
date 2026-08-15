@@ -112,6 +112,12 @@ def extract_detections(resp, text):
     The exact response shape is unverified (see context/research/pioneer.md), so this accepts
     the plausible variants rather than guessing at one. Run --probe first; if none of these
     match, print shows the raw body and this is the ONE function to edit.
+
+    Matches the normalization in sentinel/lib/detector.js so both tracks flatten identically:
+    a span whose text cannot be located in the transcript is emitted with
+    ``start=None, end=None, unlocatable=True`` — never dropped (ADR 0003 fails CLOSED, and a
+    dropped detection is PII that survives into the redacted output). redact() then scrubs
+    such a span by literal text.
     """
     # Find the list of spans wherever it lives.
     candidates = None
@@ -136,6 +142,17 @@ def extract_detections(resp, text):
         raise ValueError(f"could not locate spans in response: {json.dumps(resp)[:600]}")
 
     out = []
+    occurrence = {}  # span text -> next search offset, so duplicates map to successive hits
+
+    def locate(span):
+        """(start, end, unlocatable) — never a -1 sentinel downstream code could splice on."""
+        frm = occurrence.get(span, 0)
+        i = text.find(span, frm)
+        if i == -1:
+            return None, None, True
+        occurrence[span] = i + len(span)
+        return i, i + len(span), False
+
     for c in candidates:
         if not isinstance(c, dict):
             continue
@@ -149,26 +166,88 @@ def extract_detections(resp, text):
             span = text[start:end]
         if span is None:
             continue
+        unlocatable = False
         if start is None or end is None or text[start:end] != span:
-            i = text.find(span)  # offsets absent or stale: recover them
-            if i == -1:
-                continue
-            start, end = i, i + len(span)
+            # Offsets absent or stale. Recover them if we can; otherwise keep the detection as
+            # unlocatable — dropping it here is a fail-OPEN leak (ADR 0003).
+            start, end, unlocatable = locate(span)
         conf = c.get("confidence", c.get("score", c.get("probability")))
-        out.append(
-            {
-                "type": str(typ).lower(),
-                "text": span,
-                "start": int(start),
-                "end": int(end),
-                "confidence": round(float(conf), 4) if conf is not None else None,
-            }
-        )
+        det = {
+            "type": str(typ).lower(),
+            "text": span,
+            "start": None if start is None else int(start),
+            "end": None if end is None else int(end),
+            "confidence": round(float(conf), 4) if conf is not None else None,
+        }
+        if unlocatable:
+            det["unlocatable"] = True
+        out.append(det)
     return out
+
+
+def is_positioned(d):
+    """Does this detection carry offsets that select a real, non-empty range?
+
+    Mirrors isPositioned() in sentinel/lib/redact.js. Anything else — the `unlocatable` flag,
+    None/negative offsets, an empty or inverted range — must never reach the offset splice.
+    """
+    return (
+        not d.get("unlocatable")
+        and isinstance(d.get("start"), int)
+        and isinstance(d.get("end"), int)
+        and d["start"] >= 0
+        and d["end"] > d["start"]
+    )
+
+
+def _conf(d):
+    c = d.get("confidence")
+    return c if isinstance(c, (int, float)) else -1.0  # unknown confidence loses every tie-break
+
+
+def resolve_overlaps(detections):
+    """Keep a non-overlapping set: containment skips the inner span, a partial overlap keeps the
+    HIGHER-CONFIDENCE span. Mirrors resolveOverlaps() in sentinel/lib/redact.js (plan Task 3) —
+    the old leftmost-wins rule made BEFORE/AFTER placeholder counts a tie-break artifact.
+
+    Only positioned spans take part; overlap is meaningless without real offsets.
+    """
+    ordered = sorted(
+        (d for d in detections if is_positioned(d)),
+        key=lambda d: (d["start"], -(d["end"] - d["start"])),
+    )
+    kept = []
+    for span in ordered:
+        skip = False
+        i = 0
+        while i < len(kept):
+            k = kept[i]
+            if not (span["start"] < k["end"] and k["start"] < span["end"]):
+                i += 1
+                continue
+            if k["start"] <= span["start"] and span["end"] <= k["end"]:  # contained in a kept span
+                skip = True
+                break
+            if span["start"] <= k["start"] and k["end"] <= span["end"]:  # contains a kept span
+                kept.pop(i)
+                continue
+            if _conf(span) > _conf(k):  # partial overlap: higher confidence wins
+                kept.pop(i)
+                continue
+            skip = True
+            break
+        if not skip:
+            kept.append(span)
+    return kept
 
 
 def redact(text, detections):
     """Replace each detected span with a typed, per-type-indexed placeholder.
+
+    Returns ``(redacted_text, unresolved)``. `unresolved` lists redacted spans that had no
+    usable offsets: they were scrubbed by literal text only. `scrubbed: False` means the span's
+    text never occurred literally, so nothing was removed for it — the caller must surface that
+    loudly rather than let a silent detection count imply a clean redaction (ADR 0003).
 
     Numbering is per entity type, in order of first appearance: the first person is [PERSON_1],
     the first SSN [SSN_1], the second person [PERSON_2]. Two spans with the same type and text
@@ -177,33 +256,50 @@ def redact(text, detections):
     how many distinct people or cards a transcript held. Track A's Sentinel numbers the same way,
     so BEFORE and AFTER stay diffable.
     """
-    spans = sorted(detections, key=lambda d: (d["start"], -d["end"]))
-    kept, last_end = [], -1
-    for d in spans:  # drop overlaps; first (leftmost, longest) wins
-        if d["start"] >= last_end:
-            kept.append(d)
-            last_end = d["end"]
+    kept = sorted(resolve_overlaps(detections), key=lambda d: d["start"])
+    # Spans without usable offsets bypass overlap resolution (nothing to compare) but are still
+    # kept, tokenized and scrubbed by literal text — never dropped.
+    unlocatable = [d for d in detections if not is_positioned(d) and d.get("text")]
 
-    assigned, per_type, parts, cursor = {}, {}, [], 0
-    for d in kept:
+    assigned, per_type = {}, {}
+    for d in kept + unlocatable:  # positioned spans numbered in offset order, the rest after
         key = (d["type"], d["text"])
         if key not in assigned:  # same span text -> same placeholder within a transcript
             per_type[d["type"]] = per_type.get(d["type"], 0) + 1
             tag = re.sub(r"[^A-Za-z0-9]", "_", d["type"]).upper()
             assigned[key] = f"[{tag}_{per_type[d['type']]}]"
+
+    parts, cursor = [], 0
+    for d in kept:
         parts.append(text[cursor:d["start"]])
-        parts.append(assigned[key])
+        parts.append(assigned[(d["type"], d["text"])])
         cursor = d["end"]
     parts.append(text[cursor:])
     out = "".join(parts)
 
     # Fail closed (ADR 0003): the detector often returns only the first occurrence of a value
-    # that appears several times in a transcript. Once a span is known to be PII, scrub every
-    # literal repeat of it too, or the duplicates leak through untouched.
-    for (_typ, span), placeholder in assigned.items():
+    # that appears several times in a transcript, and an unlocatable span has no offsets at all.
+    # Once a span is known to be PII, scrub every literal occurrence of it too, or it leaks
+    # through untouched. Longest span text first, so a shorter span can't corrupt a longer one.
+    for (_typ, span), placeholder in sorted(assigned.items(), key=lambda kv: -len(kv[0][1])):
         if len(span) >= 4:  # too-short spans would match unrelated substrings
             out = out.replace(span, placeholder)
-    return out
+
+    seen, unresolved = set(), []
+    for d in unlocatable:
+        key = (d["type"], d["text"])
+        if key in seen:
+            continue
+        seen.add(key)
+        unresolved.append(
+            {
+                "type": d["type"],
+                "token": assigned[key],
+                # True only when a literal occurrence existed and is now gone.
+                "scrubbed": d["text"] in text and d["text"] not in out,
+            }
+        )
+    return out, unresolved
 
 
 def caught(planted_value, redacted_text):
@@ -227,6 +323,8 @@ def covering_detection(planted_value, text, detections):
     for ps in starts:
         pe = ps + len(planted_value)
         for d in detections:
+            if not is_positioned(d):  # unlocatable spans have no range to overlap
+                continue
             if d["start"] < pe and ps < d["end"]:  # any character overlap
                 return d
     return None
@@ -264,8 +362,16 @@ def main():
             dets = mock_detections(r)
         else:
             dets = extract_detections(call_pioneer(r["text"], key), r["text"])
-        results.append({"id": r["id"], "redacted_text": redact(r["text"], dets), "detections": dets})
+        red_text, unresolved = redact(r["text"], dets)
+        results.append({"id": r["id"], "redacted_text": red_text, "detections": dets})
         print(f"  [{i}/{len(rows)}] {r['id']}: {len(dets)} detections", flush=True)
+        # Surfaced loudly, never silently omitted (ADR 0003). Types only — errors reach stderr,
+        # PII must not.
+        for u in unresolved:
+            if not u["scrubbed"]:
+                print(f"  !! {r['id']}: UNSCRUBBED {u['type']} span {u['token']} — detected but "
+                      f"not found literally in the transcript; output may still carry it",
+                      file=sys.stderr, flush=True)
 
     with OUT_JSONL.open("w") as f:
         for res in results:
