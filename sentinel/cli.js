@@ -11,18 +11,69 @@ import { route, DEFAULT_POLICY } from './lib/policy.js';
 import { Ledger, spanHmac } from './lib/ledger.js';
 import { detect } from './lib/detector.js';
 import { applyDispositions } from './lib/redact.js';
+import {
+  generateTrainingData,
+  launchFineTune,
+  jobStatus,
+  shouldFineTune,
+  countConfirmedLabels,
+  buildGenerateBody,
+  buildTrainingJobBody,
+  DEFAULT_BASE_MODEL,
+} from './lib/finetune.js';
 
 // Must match detector.js's own default — kept as a separate constant here
 // (rather than imported) so the CLI, not the detector module, owns which
-// model it asks for. Task 5 adds a --model override on top of this.
+// model it asks for. Overridable per-run with `--model` (Task 5), e.g. to
+// A/B a deployed fine-tune job's job id against the base model.
 const DEFAULT_MODEL_ID = 'fastino/gliner2-privacy-filter-PII-multi';
 const DEFAULT_SALT = 'dev-salt';
 
-const USAGE =
-  'usage: node sentinel/cli.js scrub <transcripts.jsonl> [--out <dir>=out] [--mock] [--policy <json-file>]';
+const USAGE_SCRUB =
+  'usage: node sentinel/cli.js scrub <transcripts.jsonl> [--out <dir>=out] [--mock] [--policy <json-file>] [--model <id>]';
+const USAGE_FINETUNE =
+  'usage: node sentinel/cli.js finetune --labels <labels.json> [--out <dir>=out] [--dry-run] [--domain <text>]';
+const USAGE_FINETUNE_STATUS = 'usage: node sentinel/cli.js finetune-status <jobId>';
+const USAGE = `usage: node sentinel/cli.js <command> [options]
+
+commands:
+  scrub <transcripts.jsonl> [--out <dir>=out] [--mock] [--policy <json-file>] [--model <id>]
+  finetune --labels <labels.json> [--out <dir>=out] [--dry-run] [--domain <text>]
+  finetune-status <jobId>`;
+
+// The Track B labels.json contract (context/contracts/labels-json.md) does
+// not carry a per-report entity type — leak_reports entries are just
+// {quoted_text, n_raters}. This looks for an (optional, forward-compatible)
+// `type` field on each report and falls back to this fixed set of common
+// PII entity types — matching the policy table's contextual_types plus the
+// core PII types detector.js's fixtures exercise — when none carry one.
+const DEFAULT_FINETUNE_LABELS = [
+  'address',
+  'email',
+  'job_title',
+  'location',
+  'organization',
+  'person',
+  'phone',
+  'ssn',
+  'username',
+];
+
+const DEFAULT_DOMAIN_DESCRIPTION =
+  'Customer support agent transcripts that may contain PII such as names, addresses, phone numbers, emails, and account identifiers.';
+
+function deriveFinetuneLabels(labelsJson) {
+  const types = new Set();
+  for (const transcript of Object.values(labelsJson ?? {})) {
+    for (const report of transcript?.leak_reports ?? []) {
+      if (typeof report?.type === 'string') types.add(report.type);
+    }
+  }
+  return types.size > 0 ? [...types].sort() : DEFAULT_FINETUNE_LABELS;
+}
 
 function parseArgs(argv) {
-  const args = { input: undefined, out: 'out', mock: false, policy: undefined };
+  const args = { input: undefined, out: 'out', mock: false, policy: undefined, model: undefined };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--out') {
@@ -31,8 +82,29 @@ function parseArgs(argv) {
       args.mock = true;
     } else if (a === '--policy') {
       args.policy = argv[++i];
+    } else if (a === '--model') {
+      args.model = argv[++i];
     } else if (args.input === undefined) {
       args.input = a;
+    } else {
+      throw new Error(`unrecognized argument: ${a}`);
+    }
+  }
+  return args;
+}
+
+function parseFinetuneArgs(argv) {
+  const args = { labels: undefined, out: 'out', dryRun: false, domain: undefined };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--labels') {
+      args.labels = argv[++i];
+    } else if (a === '--out') {
+      args.out = argv[++i];
+    } else if (a === '--dry-run') {
+      args.dryRun = true;
+    } else if (a === '--domain') {
+      args.domain = argv[++i];
     } else {
       throw new Error(`unrecognized argument: ${a}`);
     }
@@ -111,7 +183,7 @@ function printSummary(summary, ledgerRows, verifyResult) {
 async function scrub(argv) {
   const args = parseArgs(argv);
   if (!args.input) {
-    throw new Error(`missing <transcripts.jsonl> argument\n${USAGE}`);
+    throw new Error(`missing <transcripts.jsonl> argument\n${USAGE_SCRUB}`);
   }
 
   let transcripts;
@@ -140,6 +212,8 @@ async function scrub(argv) {
     console.error('warning: CLEANROOM_SALT not set — using default salt');
   }
 
+  const modelId = args.model ?? DEFAULT_MODEL_ID;
+
   fs.mkdirSync(args.out, { recursive: true });
   const redactedPath = path.join(args.out, 'redacted.jsonl');
   const ledgerPath = path.join(args.out, 'ledger.jsonl');
@@ -152,7 +226,7 @@ async function scrub(argv) {
     const { id, text } = transcript;
     const rawDetections = mockMode
       ? mockDetect(transcript)
-      : await detect(text, { apiKey, modelId: DEFAULT_MODEL_ID });
+      : await detect(text, { apiKey, modelId });
 
     const decisions = rawDetections.map((d) => {
       const decidedRoute = route(d.type, d.confidence, policy);
@@ -172,7 +246,7 @@ async function scrub(argv) {
         route: d.route,
         disposition: d.disposition,
         policy_version: policy.version,
-        model_id: mockMode ? 'mock' : DEFAULT_MODEL_ID,
+        model_id: mockMode ? 'mock' : modelId,
         prompt_hash: null,
       });
 
@@ -213,15 +287,131 @@ async function scrub(argv) {
   printSummary(summary, ledgerRows, verifyResult);
 }
 
-async function main() {
-  const [command, ...rest] = process.argv.slice(2);
-  if (command !== 'scrub') {
-    console.error(USAGE);
-    process.exitCode = 1;
+/**
+ * `finetune --labels <labels.json> [--out <dir>=out] [--dry-run] [--domain <text>]`
+ *
+ * Evaluates the ADR 0005 gate (`shouldFineTune`) against
+ * `<out>/finetune-job.json` (its existence is the 1-job cap). If the gate is
+ * closed, prints why and returns without touching the network or the
+ * filesystem. If open: `--dry-run` prints both Pioneer request bodies
+ * verbatim and makes no network call (works with no PIONEER_API_KEY); the
+ * live path calls /generate then /felix/training-jobs and persists the job
+ * record so a second launch is blocked by the cap.
+ */
+async function finetune(argv) {
+  const args = parseFinetuneArgs(argv);
+  if (!args.labels) {
+    throw new Error(`missing --labels argument\n${USAGE_FINETUNE}`);
+  }
+
+  let labelsJson;
+  try {
+    labelsJson = JSON.parse(fs.readFileSync(args.labels, 'utf8'));
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      throw new Error(`cannot read ${args.labels}: ${err.message}`);
+    }
+    throw err;
+  }
+
+  const jobRecordPath = path.join(args.out, 'finetune-job.json');
+  const jobRecordExists = fs.existsSync(jobRecordPath);
+  const confirmedCount = countConfirmedLabels(labelsJson);
+
+  if (!shouldFineTune(labelsJson, jobRecordExists)) {
+    if (jobRecordExists) {
+      console.log(
+        `gate closed: a fine-tune job was already launched (${jobRecordPath} exists) — the 1-job cap (ADR 0005) is spent.`,
+      );
+    } else {
+      console.log(
+        `gate closed: ${confirmedCount} confirmed hard-case label(s), need >= 20 (ADR 0005).`,
+      );
+    }
     return;
   }
+
+  const labels = deriveFinetuneLabels(labelsJson);
+  const domainDescription = args.domain ?? DEFAULT_DOMAIN_DESCRIPTION;
+
+  console.log(
+    `gate open: ${confirmedCount} confirmed hard-case label(s) >= 20, no prior job — launching fine-tune.`,
+  );
+
+  if (args.dryRun) {
+    console.log('\n--dry-run: request bodies that would be sent (no network calls made)\n');
+    console.log('POST https://api.pioneer.ai/generate');
+    console.log(JSON.stringify(buildGenerateBody({ labels, domainDescription }), null, 2));
+    console.log('\nPOST https://api.pioneer.ai/felix/training-jobs');
+    console.log(
+      JSON.stringify(
+        buildTrainingJobBody({
+          baseModel: DEFAULT_BASE_MODEL,
+          datasetRef: '<dataset_id from the /generate response above>',
+        }),
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
+  const apiKey = process.env.PIONEER_API_KEY;
+  if (!apiKey) {
+    throw new Error('PIONEER_API_KEY not set (use --dry-run to preview without a key)');
+  }
+
+  const generated = await generateTrainingData({ apiKey, labels, domainDescription });
+  const launched = await launchFineTune({ apiKey, datasetRef: generated.datasetRef });
+
+  fs.mkdirSync(args.out, { recursive: true });
+  const record = {
+    jobId: launched.jobId,
+    launchedAt: new Date().toISOString(),
+    baseModel: DEFAULT_BASE_MODEL,
+  };
+  fs.writeFileSync(jobRecordPath, `${JSON.stringify(record, null, 2)}\n`);
+
+  console.log(`\nfine-tune job launched: ${launched.jobId}`);
+}
+
+/**
+ * `finetune-status <jobId>` — prints the job's current state; once
+ * `deployed`, also prints the exact A/B scrub command (Task 4's live mode
+ * accepts `--model` to override the model id).
+ */
+async function finetuneStatus(argv) {
+  const [jobId] = argv;
+  if (!jobId) {
+    throw new Error(`missing <jobId> argument\n${USAGE_FINETUNE_STATUS}`);
+  }
+
+  const apiKey = process.env.PIONEER_API_KEY;
+  if (!apiKey) {
+    throw new Error('PIONEER_API_KEY not set');
+  }
+
+  const { status } = await jobStatus({ apiKey, jobId });
+  console.log(`job ${jobId}: ${status}`);
+  if (status === 'deployed') {
+    console.log(`\nA/B scrub command:\n  node sentinel/cli.js scrub <file> --model ${jobId}`);
+  }
+}
+
+async function main() {
+  const [command, ...rest] = process.argv.slice(2);
   try {
-    await scrub(rest);
+    if (command === 'scrub') {
+      await scrub(rest);
+    } else if (command === 'finetune') {
+      await finetune(rest);
+    } else if (command === 'finetune-status') {
+      await finetuneStatus(rest);
+    } else {
+      console.error(USAGE);
+      process.exitCode = 1;
+      return;
+    }
   } catch (err) {
     console.error(`error: ${err.message}`);
     process.exitCode = 1;

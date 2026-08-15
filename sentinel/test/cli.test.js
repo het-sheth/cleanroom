@@ -245,6 +245,20 @@ test('exits non-zero and reports the line number on invalid JSON in the transcri
   );
 });
 
+test('scrub accepts --model in mock mode (parsed, no error); mock-mode ledger rows stay model_id "mock"', async () => {
+  const { inputPath } = buildFixture();
+  const outDir = tempDir('sentinel-cli-out-');
+
+  await runCli(['scrub', inputPath, '--out', outDir, '--mock', '--model', 'some-finetune-job-id']);
+
+  const ledger = new Ledger(path.join(outDir, 'ledger.jsonl'));
+  const rows = ledger.rows();
+  assert.ok(rows.length > 0);
+  for (const row of rows) {
+    assert.equal(row.model_id, 'mock');
+  }
+});
+
 test('exits non-zero on an unrecognized subcommand', async () => {
   await assert.rejects(
     () => runCli(['bogus']),
