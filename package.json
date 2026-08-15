@@ -1,0 +1,8 @@
+{
+  "name": "cleanroom",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test sentinel/test/"
+  }
+}
