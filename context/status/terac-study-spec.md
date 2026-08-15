@@ -5,7 +5,7 @@ description: Exact feasibility/launch calls and decision tree for the leak-spott
 timestamp: 2026-08-15T21:20:00Z
 ---
 
-Status: **NOT LAUNCHED — blocked.** The Terac MCP is not configured in this environment and the
+Status: **FEASIBILITY REQUESTED** (id si6si8o8barzgjhhlrducc36, 2026-08-15 ~21:08Z, 4h-turnaround ask, gen-pop, 5 participants each rating all 15 snippets). Quote expected ~1h; launch follows decision tree below.
 credit link is unredeemed. Both need the account holder; Track B cannot self-unblock. Everything
 below is prepared so launch is a single call once it is.
 
