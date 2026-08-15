@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>cleanroom — live decisions</title>
+<style>
+  :root {
+    --bg: #080b0d;
+    --panel: #0f1518;
+    --panel-2: #131b1f;
+    --line: #1f2b31;
+    --fg: #dbe6ea;
+    --dim: #7b8f98;
+    --accent: #22d3c5;
+    --redact: #ff5f56;
+    --observed: #ffb020;
+    --allow: #3fd07f;
+    --pseudo: #c084fc;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); }
+  body {
+    font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace;
+    padding: 14px 18px 40px;
+  }
+  h1, h2 { margin: 0; font-weight: 700; letter-spacing: 0.02em; }
+  a { color: var(--accent); }
+
+  header {
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 14px;
+  }
+  header h1 { font-size: 26px; color: var(--accent); }
+  header .tag { color: var(--dim); font-size: 13px; }
+  header .spacer { flex: 1; }
+  header .meta { color: var(--dim); font-size: 13px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--allow); display: inline-block; margin-right: 6px; }
+  .dot.stale { background: var(--redact); }
+
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 16px; }
+  .kpi .label { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: 0.09em; }
+  .kpi .value { font-size: 52px; line-height: 1.05; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .kpi .sub { color: var(--dim); font-size: 12px; }
+  .kpi.wedge { border-color: var(--observed); }
+  .kpi.wedge .value { color: var(--observed); }
+  .kpi.chain-ok .value { color: var(--allow); font-size: 30px; padding-top: 12px; }
+  .kpi.chain-bad { border-color: var(--redact); }
+  .kpi.chain-bad .value { color: var(--redact); font-size: 30px; padding-top: 12px; }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(340px, 1fr); gap: 12px; align-items: start; }
+  .rail { display: grid; gap: 12px; }
+  section.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; margin-bottom: 12px; }
+  .panel > h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.11em; color: var(--dim);
+    padding: 10px 14px; border-bottom: 1px solid var(--line);
+    display: flex; gap: 10px; align-items: center; justify-content: space-between;
+  }
+  .panel > h2 .count { color: var(--accent); }
+  .panel .body { padding: 12px 14px; }
+  .panel.wedge { border-color: var(--observed); }
+  .panel.wedge > h2 { color: var(--observed); }
+
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th { text-align: left; color: var(--dim); font-weight: 400; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+  th, td { padding: 5px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  tbody tr:hover { background: var(--panel-2); }
+  .scroll { max-height: 46vh; overflow: auto; }
+  .scroll table { font-size: 14px; }
+  thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+  td.mono-dim { color: var(--dim); font-size: 12px; }
+  tr.fresh td { animation: flash 1.8s ease-out; }
+  @keyframes flash { from { background: rgba(34, 211, 197, 0.28); } to { background: transparent; } }
+
+  .badge {
+    display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 12px;
+    border: 1px solid currentColor; letter-spacing: 0.02em;
+  }
+  .r-auto-redact, .d-redact, .d-timeout { color: var(--redact); }
+  .r-consult { color: var(--accent); }
+  .r-allow-observed { color: var(--observed); }
+  .d-allow { color: var(--allow); }
+  .d-pseudonymize { color: var(--pseudo); }
+  .d-none { color: var(--dim); border-color: transparent; }
+
+  .conf { display: inline-flex; align-items: center; gap: 7px; }
+  .conf .track { width: 62px; height: 7px; background: #1b262b; border-radius: 2px; overflow: hidden; }
+  .conf .fill { display: block; height: 100%; background: currentColor; }
+  .conf .num { font-size: 12px; color: var(--fg); }
+
+  .wedge-figure { font-size: 60px; font-weight: 700; color: var(--observed); line-height: 1; font-variant-numeric: tabular-nums; }
+  .wedge-caption { color: var(--fg); font-size: 14px; margin: 10px 0 12px; max-width: 60ch; }
+  .wedge-list { max-height: 26vh; overflow: auto; }
+
+  .verdict { display: block; padding: 10px 12px; border-radius: 5px; font-size: 20px; font-weight: 700; letter-spacing: 0.04em; text-align: center; }
+  .verdict.ok { color: var(--allow); border: 1px solid var(--allow); background: rgba(63, 208, 127, 0.08); }
+  .verdict.bad { color: var(--redact); border: 1px solid var(--redact); background: rgba(255, 95, 86, 0.1); }
+  dl.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 12px; margin: 12px 0 0; }
+  dl.kv dt { color: var(--dim); }
+  dl.kv dd { margin: 0; overflow-wrap: anywhere; }
+  .note { color: var(--dim); font-size: 12px; margin-top: 10px; }
+  button {
+    font: inherit; color: var(--fg); background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 4px; padding: 5px 10px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button[aria-pressed="true"] { color: var(--bg); background: var(--observed); border-color: var(--observed); font-weight: 700; }
+  select { font: inherit; color: var(--fg); background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
+
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pane h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--dim); font-weight: 400; }
+  .pane pre {
+    margin: 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px;
+    white-space: pre-wrap; overflow-wrap: anywhere; max-height: 34vh; overflow: auto; font-size: 13px;
+  }
+  mark.ph { background: rgba(34, 211, 197, 0.18); color: var(--accent); border: 1px solid var(--accent); border-radius: 3px; padding: 0 3px; font-weight: 700; }
+  mark.raw { background: rgba(255, 95, 86, 0.14); color: var(--redact); border-radius: 3px; padding: 0 3px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip { border: 1px solid var(--line); border-radius: 3px; padding: 1px 7px; font-size: 12px; color: var(--dim); }
+  .empty { color: var(--dim); padding: 6px 0; }
+
+  @media (max-width: 1200px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .grid, .panes { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>cleanroom</h1>
+  <span class="tag">autonomous PII-compliance department · live decisions</span>
+  <span class="spacer"></span>
+  <span class="meta">
+    <span><span class="dot" id="dot"></span><span id="poll-status">connecting…</span></span>
+    <span id="src-dir">–</span>
+    <span id="src-files">–</span>
+  </span>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><div class="label">Decisions ledgered</div><div class="value" id="kpi-total">0</div><div class="sub" id="kpi-total-sub">across 0 transcripts</div></div>
+  <div class="kpi"><div class="label">Redacted</div><div class="value" id="kpi-redacted">0</div><div class="sub" id="kpi-redacted-sub">auto-redact + consult→redact</div></div>
+  <div class="kpi wedge"><div class="label">Observed, not acted on</div><div class="value" id="kpi-observed">0</div><div class="sub">below floor · ledgered anyway</div></div>
+  <div class="kpi chain-ok" id="kpi-chain"><div class="label">Ledger chain</div><div class="value" id="kpi-chain-value">–</div><div class="sub" id="kpi-chain-sub">0 rows</div></div>
+</div>
+
+<div class="grid">
+  <div>
+    <section class="panel">
+      <h2>Live catches <span class="count" id="catches-count"></span></h2>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>trace</th><th>entity type</th><th>confidence</th><th>route</th><th>disposition</th><th>span HMAC</th>
+            </tr>
+          </thead>
+          <tbody id="catches"><tr><td colspan="6" class="empty">waiting for ledger rows…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Before / after <span><select id="transcript-select"></select></span></h2>
+      <div class="body">
+        <div class="panes">
+          <div class="pane">
+            <h3>Before — raw transcript (inside the trust boundary)</h3>
+            <pre id="pane-before"></pre>
+          </div>
+          <div class="pane">
+            <h3>After — exported text (crosses the boundary)</h3>
+            <pre id="pane-after"></pre>
+          </div>
+        </div>
+        <div class="chips" id="detection-chips"></div>
+        <p class="note">Reconstructed in-page from the detection metadata for the demo only. All PII is planted and synthetic. Only the right-hand pane is ever exported.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Per-type summary — entity type × route</h2>
+      <div class="body">
+        <table>
+          <thead><tr><th>entity type</th><th>auto-redact</th><th>consult</th><th>allow-observed</th><th>total</th></tr></thead>
+          <tbody id="summary"><tr><td colspan="5" class="empty">no decisions yet</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="rail">
+    <section class="panel wedge">
+      <h2>Observed, not acted on <span class="count" id="wedge-count"></span></h2>
+      <div class="body">
+        <div class="wedge-figure" id="wedge-figure">0</div>
+        <p class="wedge-caption">Every PII layer proves what it redacted; cleanroom proves what it saw and deliberately didn't — cryptographically, without storing the value.</p>
+        <div class="wedge-list">
+          <table>
+            <thead><tr><th>trace</th><th>entity type</th><th>conf</th></tr></thead>
+            <tbody id="wedge-rows"><tr><td colspan="3" class="empty">none yet</td></tr></tbody>
+          </table>
+        </div>
+        <p class="note">Below-floor spans are exported, but each one leaves an observed-not-acted decision record. Silent false negatives become visible ones.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Ledger integrity <button id="tamper" type="button" aria-pressed="false">simulate tamper</button></h2>
+      <div class="body">
+        <span class="verdict ok" id="verdict">no rows</span>
+        <dl class="kv">
+          <dt>chain length</dt><dd id="chain-length">0</dd>
+          <dt>head hash</dt><dd id="chain-head" title="">–</dd>
+          <dt id="detail-label" hidden>detail</dt><dd id="detail-value" hidden></dd>
+        </dl>
+        <p class="note" id="tamper-note" hidden></p>
+        <p class="note">
+          Verified in your browser: recomputed forward from genesis (prev_hash = 64 zeros), row_hash = sha256(prev_hash + canonical payload JSON).
+          Tamper-evident to anyone holding an earlier head — not tamper-proof against the storage operator (ADR 0004).
+        </p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!--INLINE_CHAIN_MODULE-->
+
+<script>
+(function () {
+  'use strict';
+
+  var POLL_MS = 2000;
+  var MAX_ROWS = 200;
+  var chain = window.cleanroomChain || null;
+  var seenRows = Object.create(null);
+  var firstRender = true;
+  var tamperOn = false;
+  var lastState = null;
+  var selectedTranscript = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function esc(value) {
+    return String(value === null || value === undefined ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function truncHash(hash, keep) {
+    if (!hash) return '–';
+    return String(hash).length > keep ? String(hash).slice(0, keep) + '…' : String(hash);
+  }
+
+  function badge(value, prefix) {
+    var text = value === null || value === undefined ? '—' : String(value);
+    var cls = value === null || value === undefined ? prefix + 'none' : prefix + text;
+    var title = text === 'timeout' ? ' title="no verdict within timeout — fail closed to redact (ADR 0003)"' : '';
+    return '<span class="badge ' + esc(cls) + '"' + title + '>' + esc(text) + '</span>';
+  }
+
+  function confidenceCell(row) {
+    var raw = typeof row.confidence === 'number' ? row.confidence : null;
+    if (raw === null) return '<span class="conf r-consult"><span class="num">—</span></span>';
+    var pct = Math.max(0, Math.min(1, raw)) * 100;
+    var cls = 'r-' + String(row.route || 'consult');
+    return '<span class="conf ' + esc(cls) + '"><span class="track"><span class="fill" style="width:' + pct.toFixed(1) + '%"></span></span>' +
+      '<span class="num">' + raw.toFixed(2) + '</span></span>';
+  }
+
+  // ---- redaction counting -------------------------------------------------
+  function redactedCount(ledger) {
+    var n = 0;
+    for (var i = 0; i < ledger.length; i += 1) {
+      var row = ledger[i];
+      if (row.route === 'auto-redact') n += 1;
+      else if (row.disposition === 'redact' || row.disposition === 'pseudonymize' || row.disposition === 'timeout') n += 1;
+    }
+    return n;
+  }
+
+  // ---- tamper simulation --------------------------------------------------
+  // Client-side only: never writes to the ledger file. Flips one field of one row so the
+  // recomputed row_hash stops matching the stored one.
+  function applyTamper(ledger) {
+    if (!tamperOn || !ledger.length) return { rows: ledger, description: null };
+    var index = Math.floor(ledger.length / 2);
+    var copy = ledger.slice();
+    var original = copy[index];
+    var before = typeof original.confidence === 'number' ? original.confidence : 0.5;
+    var after = Number((before >= 0.5 ? before - 0.3 : before + 0.3).toFixed(2));
+    var mutated = {};
+    for (var key in original) if (Object.prototype.hasOwnProperty.call(original, key)) mutated[key] = original[key];
+    mutated.confidence = after;
+    copy[index] = mutated;
+    return {
+      rows: copy,
+      description: 'Edited row ' + index + ' in memory: confidence ' + before.toFixed(2) + ' → ' + after.toFixed(2) +
+        '. Nothing else touched, and prev_hash/row_hash were left exactly as stored.',
+    };
+  }
+
+  // ---- renderers ----------------------------------------------------------
+  function renderCatches(ledger) {
+    var body = $('catches');
+    $('catches-count').textContent = ledger.length ? ledger.length + ' decisions' : '';
+    if (!ledger.length) {
+      body.innerHTML = '<tr><td colspan="6" class="empty">waiting for ledger rows…</td></tr>';
+      return;
+    }
+    var newest = ledger.slice(-MAX_ROWS).reverse();
+    var html = '';
+    for (var i = 0; i < newest.length; i += 1) {
+      var row = newest[i];
+      var key = row.row_hash || (row.trace_id + ':' + row.span_hmac + ':' + i);
+      var fresh = !firstRender && !seenRows[key];
+      seenRows[key] = true;
+      html += '<tr class="' + (fresh ? 'fresh' : '') + '">' +
+        '<td>' + esc(row.trace_id) + '</td>' +
+        '<td>' + esc(row.entity_type) + '</td>' +
+        '<td>' + confidenceCell(row) + '</td>' +
+        '<td>' + badge(row.route, 'r-') + '</td>' +
+        '<td>' + badge(row.disposition, 'd-') + '</td>' +
+        '<td class="mono-dim" title="' + esc(row.span_hmac) + '">' + esc(truncHash(row.span_hmac, 12)) + '</td>' +
+        '</tr>';
+    }
+    if (ledger.length > MAX_ROWS) {
+      html += '<tr><td colspan="6" class="empty">showing the latest ' + MAX_ROWS + ' of ' + ledger.length + ' decisions</td></tr>';
+    }
+    body.innerHTML = html;
+  }
+
+  function renderWedge(ledger) {
+    var observed = ledger.filter(function (row) { return row.route === 'allow-observed'; });
+    $('wedge-figure').textContent = observed.length;
+    $('kpi-observed').textContent = observed.length;
+    $('wedge-count').textContent = observed.length ? observed.length + ' rows' : '';
+    var body = $('wedge-rows');
+    if (!observed.length) {
+      body.innerHTML = '<tr><td colspan="3" class="empty">none yet</td></tr>';
+      return;
+    }
+    var html = '';
+    var newest = observed.slice(-40).reverse();
+    for (var i = 0; i < newest.length; i += 1) {
+      var row = newest[i];
+      html += '<tr><td>' + esc(row.trace_id) + '</td><td>' + esc(row.entity_type) + '</td><td>' +
+        (typeof row.confidence === 'number' ? row.confidence.toFixed(2) : '—') + '</td></tr>';
+    }
+    body.innerHTML = html;
+  }
+
+  function renderIntegrity(ledger, tamperDescription, serverIntegrity) {
+    var result = chain ? chain.verifyChain(ledger) : serverIntegrity;
+    var verdict = $('verdict');
+    var kpi = $('kpi-chain');
+    var kpiValue = $('kpi-chain-value');
+
+    $('chain-length').textContent = result.length + (result.length === 1 ? ' row' : ' rows');
+    var head = result.head;
+    $('chain-head').textContent = truncHash(head, 16);
+    $('chain-head').title = head || '';
+    $('kpi-chain-sub').textContent = result.length + (result.length === 1 ? ' row' : ' rows') +
+      (chain ? ' · verified in-browser' : ' · verified server-side');
+
+    var detailLabel = $('detail-label');
+    var detailValue = $('detail-value');
+    var note = $('tamper-note');
+
+    if (!result.length) {
+      verdict.className = 'verdict ok';
+      verdict.textContent = 'no rows yet';
+      kpi.className = 'kpi chain-ok';
+      kpiValue.textContent = '—';
+      detailLabel.hidden = detailValue.hidden = true;
+      note.hidden = true;
+      return;
+    }
+
+    if (result.ok) {
+      verdict.className = 'verdict ok';
+      verdict.textContent = 'CHAIN VERIFIES';
+      kpi.className = 'kpi chain-ok';
+      kpiValue.textContent = 'VERIFIES';
+      detailLabel.hidden = detailValue.hidden = true;
+    } else {
+      verdict.className = 'verdict bad';
+      verdict.textContent = 'TAMPERED AT ROW ' + result.broken_index;
+      kpi.className = 'kpi chain-bad';
+      kpiValue.textContent = 'TAMPERED';
+      detailLabel.hidden = detailValue.hidden = false;
+      detailLabel.textContent = 'detail';
+      detailValue.innerHTML = esc(result.reason) + '<br>expected <code>' + esc(truncHash(result.expected, 16)) +
+        '</code><br>found <code>' + esc(truncHash(result.found, 16)) + '</code>';
+    }
+
+    note.hidden = !tamperDescription;
+    if (tamperDescription) note.textContent = tamperDescription;
+  }
+
+  function renderSummary(summary) {
+    var body = $('summary');
+    var rows = summary && summary.by_type ? summary.by_type : [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">no decisions yet</td></tr>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < rows.length; i += 1) {
+      var row = rows[i];
+      html += '<tr><td>' + esc(row.entity_type) + '</td>' +
+        '<td class="r-auto-redact">' + row['auto-redact'] + '</td>' +
+        '<td class="r-consult">' + row.consult + '</td>' +
+        '<td class="r-allow-observed">' + row['allow-observed'] + '</td>' +
+        '<td>' + row.total + '</td></tr>';
+    }
+    html += '<tr><td><strong>all types</strong></td>' +
+      '<td>' + summary.routes['auto-redact'] + '</td><td>' + summary.routes.consult + '</td>' +
+      '<td>' + summary.routes['allow-observed'] + '</td><td><strong>' + summary.total + '</strong></td></tr>';
+    body.innerHTML = html;
+  }
+
+  // ---- before / after -----------------------------------------------------
+  function tokenize(text) {
+    var parts = [];
+    var re = /\[([A-Z][A-Z0-9_]*?)_(\d+)\]/g;
+    var last = 0;
+    var match;
+    while ((match = re.exec(text)) !== null) {
+      if (match.index > last) parts.push({ literal: text.slice(last, match.index) });
+      parts.push({ token: match[0], type: match[1], ordinal: Number(match[2]) });
+      last = re.lastIndex;
+    }
+    if (last < text.length) parts.push({ literal: text.slice(last) });
+    return parts;
+  }
+
+  function detectionFor(transcript, type, ordinal) {
+    var matches = (transcript.detections || [])
+      .filter(function (d) { return String(d.type || '').toUpperCase() === type; })
+      .sort(function (a, b) { return (a.start || 0) - (b.start || 0); });
+    return matches[ordinal - 1] || null;
+  }
+
+  function renderTranscript(transcripts) {
+    var select = $('transcript-select');
+    var ids = transcripts.map(function (t) { return String(t.id); });
+    var signature = ids.join('|');
+    if (select.dataset.signature !== signature) {
+      select.dataset.signature = signature;
+      select.innerHTML = ids.map(function (id) { return '<option value="' + esc(id) + '">' + esc(id) + '</option>'; }).join('');
+    }
+    if (ids.indexOf(selectedTranscript) === -1) selectedTranscript = ids[0] || null;
+    if (selectedTranscript) select.value = selectedTranscript;
+
+    var transcript = transcripts.filter(function (t) { return String(t.id) === selectedTranscript; })[0];
+    if (!transcript) {
+      $('pane-before').textContent = 'no transcripts in redacted.jsonl yet';
+      $('pane-after').textContent = '';
+      $('detection-chips').innerHTML = '';
+      return;
+    }
+
+    var parts = tokenize(String(transcript.redacted_text || ''));
+    var before = '';
+    var after = '';
+    for (var i = 0; i < parts.length; i += 1) {
+      var part = parts[i];
+      if (part.literal !== undefined) {
+        before += esc(part.literal);
+        after += esc(part.literal);
+        continue;
+      }
+      after += '<mark class="ph">' + esc(part.token) + '</mark>';
+      var detection = detectionFor(transcript, part.type, part.ordinal);
+      before += detection && typeof detection.text === 'string'
+        ? '<mark class="raw">' + esc(detection.text) + '</mark>'
+        : '<mark class="ph">' + esc(part.token) + '</mark>';
+    }
+    $('pane-before').innerHTML = before || '<span class="empty">empty transcript</span>';
+    $('pane-after').innerHTML = after || '<span class="empty">empty transcript</span>';
+
+    $('detection-chips').innerHTML = (transcript.detections || []).map(function (d) {
+      var conf = typeof d.confidence === 'number' ? ' ' + d.confidence.toFixed(2) : '';
+      return '<span class="chip">' + esc(d.type) + conf + ' @' + esc(d.start) + '–' + esc(d.end) + '</span>';
+    }).join('');
+  }
+
+  // ---- top-level render ---------------------------------------------------
+  function render(state) {
+    lastState = state;
+    var tampered = applyTamper(state.ledger || []);
+    var ledger = tampered.rows;
+
+    $('src-dir').textContent = 'dir ' + state.dir;
+    $('src-files').textContent =
+      'redacted.jsonl ' + (state.sources.redacted.present ? state.sources.redacted.records : 'absent') +
+      ' · ledger.jsonl ' + (state.sources.ledger.present ? state.sources.ledger.records : 'absent');
+
+    $('kpi-total').textContent = ledger.length;
+    $('kpi-total-sub').textContent = 'across ' + (state.transcripts || []).length + ' transcripts';
+    $('kpi-redacted').textContent = redactedCount(ledger);
+
+    renderCatches(ledger);
+    renderWedge(ledger);
+    renderIntegrity(ledger, tampered.description, state.integrity);
+    renderSummary(state.summary);
+    renderTranscript(state.transcripts || []);
+    firstRender = false;
+  }
+
+  function setStatus(text, stale) {
+    $('poll-status').textContent = text;
+    $('dot').className = stale ? 'dot stale' : 'dot';
+  }
+
+  function poll() {
+    fetch('/api/state', { cache: 'no-store' })
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (state) {
+        setStatus('live · ' + new Date().toLocaleTimeString(), false);
+        render(state);
+      })
+      .catch(function (err) {
+        setStatus('server unreachable (' + err.message + ')', true);
+      });
+  }
+
+  $('tamper').addEventListener('click', function () {
+    tamperOn = !tamperOn;
+    this.setAttribute('aria-pressed', String(tamperOn));
+    this.textContent = tamperOn ? 'restore ledger' : 'simulate tamper';
+    if (lastState) render(lastState);
+  });
+
+  $('transcript-select').addEventListener('change', function () {
+    selectedTranscript = this.value;
+    if (lastState) renderTranscript(lastState.transcripts || []);
+  });
+
+  poll();
+  setInterval(poll, POLL_MS);
+})();
+</script>
+</body>
+</html>
