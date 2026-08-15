@@ -54,7 +54,9 @@ export function buildGenerateBody({ labels, domainDescription, numExamples = 100
  * @param {typeof fetch} [opts.fetchImpl]
  * @returns {Promise<object>} the parsed response body, unmodified, plus a
  *   best-effort `datasetRef` (from `dataset_id` | `id` | `dataset`, in that
- *   order — may be `undefined` if the response carries none of them).
+ *   order). Throws if the body is not a plain object, or if it is one but
+ *   carries none of those keys (same unrecognized-shape convention as
+ *   `launchFineTune` / `jobStatus`).
  */
 export async function generateTrainingData({
   apiKey,
@@ -77,6 +79,11 @@ export async function generateTrainingData({
     );
   }
   const datasetRef = body.dataset_id ?? body.id ?? body.dataset;
+  if (datasetRef === undefined) {
+    throw new Error(
+      `unrecognized Pioneer generate response shape: ${JSON.stringify(body)}`,
+    );
+  }
   return { ...body, datasetRef };
 }
 

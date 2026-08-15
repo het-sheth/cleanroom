@@ -120,6 +120,18 @@ test('generateTrainingData: unrecognized (non-object) response shape throws with
   );
 });
 
+test('generateTrainingData: plain object with no candidate keys throws with body JSON', async () => {
+  const fetchImpl = fakeFetch(200, { status: 'queued' });
+  await assert.rejects(
+    () => generateTrainingData({ apiKey: 'k', labels: [], domainDescription: 'd', fetchImpl }),
+    (err) => {
+      assert.match(err.message, /unrecognized Pioneer generate response shape/);
+      assert.match(err.message, /queued/);
+      return true;
+    },
+  );
+});
+
 // ---- launchFineTune --------------------------------------------------------
 
 test('launchFineTune POSTs to /felix/training-jobs with the expected body', async () => {
