@@ -44,6 +44,17 @@ each one and how to get it back:
 | The dashboard | It's a branch, not a worktree: `git worktree add ../cleanroom-dashboard feat/dashboard`, then `node dashboard/server.js --dir <out>`. |
 | `node_modules/`, `.venv-band/` | Nothing to install for the Sentinel — **zero runtime dependencies**, Node ≥22, `npm test` works off a bare clone. `.venv-band` only matters for Band. |
 
+**Not a file, and easy to miss:** the Terac MCP server is Claude Code config, not repo content, so
+a new machine has no Terac tools at all until you run
+`claude mcp add --transport http terac https://terac.com/api/mcp`, restart the session, and
+complete auth. This gap already stalled one session today.
+
+**Most secrets are not actually needed.** The demo is fully mock-mode: `agent_config.yaml` matters
+only on a machine that runs `agent.run()` (and Band isn't wired into the Sentinel yet — consults
+resolve to `disposition: "timeout"` in code), `PIONEER_API_KEY` only unblocks live detection
+(currently 403), and `CLEANROOM_SALT` only matters if you want ledger HMACs comparable across
+machines. Move keys when you need those, not to get started.
+
 Smoke test that a fresh machine is working, no secrets needed:
 
 ```
