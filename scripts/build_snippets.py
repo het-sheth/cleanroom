@@ -23,7 +23,8 @@ import pathlib
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TRANSCRIPTS = ROOT / "data" / "transcripts.jsonl"
 REDACTED = ROOT / "data" / "redacted_baseline.jsonl"
-OUT = ROOT / "data" / "study_snippets.json"
+OUT = ROOT / "data" / "study_snippets.json"           # rater-facing — safe to send
+GROUND_TRUTH = ROOT / "data" / "study_ground_truth.json"  # internal scoring key — never send
 
 # Priority order. Hard cases and the injection fixture first, so --count 8 degrades to the
 # most informative subset rather than an arbitrary one.
@@ -66,21 +67,19 @@ def main():
     src = {json.loads(l)["id"]: json.loads(l) for l in TRANSCRIPTS.open()}
 
     chosen = [t for t in PRIORITY if t in red][: args.count]
-    snippets = []
+    snippets, ground_truth = [], {}
     for tid in chosen:
         r = red[tid]
-        snippets.append(
-            {
-                "item_id": tid,
-                "text": f"[Session {tid}]\n\n{trim(r['redacted_text'])}",
-                # internal only — never shown to raters, used to score their answers afterwards
-                "_ground_truth": {
-                    "planted": len(src[tid]["planted"]),
-                    "detected": len(r["detections"]),
-                    "difficulty": src[tid]["difficulty"],
-                },
-            }
-        )
+        snippets.append({"item_id": tid, "text": f"[Session {tid}]\n\n{trim(r['redacted_text'])}"})
+        # Kept in a SEPARATE file, never in the launch payload. A rater who can see how many
+        # entities were planted knows how hard to look, and the leak-report counts stop
+        # measuring anything.
+        ground_truth[tid] = {
+            "planted": len(src[tid]["planted"]),
+            "detected": len(r["detections"]),
+            "difficulty": src[tid]["difficulty"],
+            "planted_values": [p["value"] for p in src[tid]["planted"]],
+        }
 
     payload = {
         "audience": "general population",
@@ -110,8 +109,14 @@ def main():
         "snippets": snippets,
     }
     OUT.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+    GROUND_TRUTH.write_text(json.dumps(ground_truth, indent=2, ensure_ascii=False) + "\n")
+
+    leaked = json.dumps(payload)
+    assert "planted" not in leaked and "_ground_truth" not in leaked, \
+        "ground truth leaked into the rater-facing payload"
 
     print(f"wrote {OUT} — {len(snippets)} snippets, {len(snippets) * 5} rater-responses needed")
+    print(f"wrote {GROUND_TRUTH} — internal scoring key, do NOT send to Terac")
     print(f"  items: {', '.join(s['item_id'] for s in snippets)}")
     missing = [t for t in PRIORITY[: args.count] if t not in red]
     if missing:

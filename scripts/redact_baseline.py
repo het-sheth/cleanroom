@@ -9,6 +9,8 @@ No tuning here by design — the baseline is supposed to miss things (see build-
 Usage:
   python3 scripts/redact_baseline.py --probe    # dump ONE raw API response, adapt, then run
   python3 scripts/redact_baseline.py            # full pass over all 25
+  python3 scripts/redact_baseline.py --mock     # no key needed; unblocks the Terac payload,
+                                                # but the numbers are NOT detector measurements
 
 Needs PIONEER_API_KEY in .env (gitignored) or the environment.
 Stdlib only — no pip install, so it runs cold.
@@ -31,6 +33,35 @@ OUT_METRICS = ROOT / "data" / "baseline_metrics.json"
 ENDPOINT = "https://api.pioneer.ai/inference"
 MODEL_ID = "fastino/gliner2-privacy-filter-PII-multi"
 THRESHOLD = 0.5  # default; do NOT tune here — tuning happens after Terac labels
+
+
+def mock_detections(row):
+    """Stand-in detections derived from planted ground truth — NOT a model measurement.
+
+    Uses the same pseudo-confidence formula as the Sentinel's mock mode
+    (docs/superpowers/plans/2026-08-15-sentinel-core.md Task 4) so a mock BEFORE and a mock
+    AFTER are directly comparable. Spans below the policy floor are left undetected, which is
+    what makes a mock baseline miss anything at all.
+
+    Exists so the Terac snippet payload can be built before a Pioneer key arrives — the study
+    launch is the critical path. Numbers produced this way are pipeline smoke tests and must
+    never be quoted as baseline detector recall.
+    """
+    import hashlib
+
+    FLOOR = 0.35  # DEFAULT_POLICY floor; below this the Sentinel routes allow-observed
+    dets = []
+    for p in row["planted"]:
+        h = hashlib.sha256((row["id"] + p["type"] + p["value"]).encode()).hexdigest()
+        conf = 0.30 + (int(h[:4], 16) / 0xFFFF) * 0.65
+        if conf < FLOOR:
+            continue  # allow-observed: seen, ledgered, not redacted
+        start = row["text"].find(p["value"])
+        while start != -1:
+            dets.append({"type": p["type"], "text": p["value"], "start": start,
+                         "end": start + len(p["value"]), "confidence": round(conf, 4)})
+            start = row["text"].find(p["value"], start + 1)
+    return dets
 
 
 def load_key():
@@ -196,9 +227,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--probe", action="store_true", help="print one raw response and exit")
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--mock", action="store_true",
+                    help="derive detections from planted ground truth instead of calling Pioneer; "
+                         "unblocks the Terac payload before a key exists (NOT a real baseline)")
     args = ap.parse_args()
 
-    key = load_key()
+    key = None if args.mock else load_key()
     rows = [json.loads(l) for l in TRANSCRIPTS.open()]
 
     if args.probe:
@@ -217,8 +251,10 @@ def main():
 
     results = []
     for i, r in enumerate(rows, 1):
-        resp = call_pioneer(r["text"], key)
-        dets = extract_detections(resp, r["text"])
+        if args.mock:
+            dets = mock_detections(r)
+        else:
+            dets = extract_detections(call_pioneer(r["text"], key), r["text"])
         results.append({"id": r["id"], "redacted_text": redact(r["text"], dets), "detections": dets})
         print(f"  [{i}/{len(rows)}] {r['id']}: {len(dets)} detections", flush=True)
 
@@ -266,8 +302,9 @@ def main():
     )
 
     metrics = {
-        "label": "BEFORE",
-        "model_id": MODEL_ID,
+        "label": "BEFORE (MOCK — not a detector measurement)" if args.mock else "BEFORE",
+        "mock": bool(args.mock),
+        "model_id": "mock" if args.mock else MODEL_ID,
         "threshold": THRESHOLD,
         "transcripts": len(rows),
         "overall": {

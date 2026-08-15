@@ -14,21 +14,23 @@ security moment.
       regenerate with `python3 scripts/gen_transcripts.py` (validates verbatim planting on write).
       82 planted entities / 19 types; 10 hard-case transcripts, 5 tricky negatives, t25 injection.
 - [~] Baseline redaction + BEFORE metrics ([[contracts/redacted-baseline]]) — `scripts/redact_baseline.py`
-      written and unit-tested offline against three candidate response shapes. BLOCKED on
-      `PIONEER_API_KEY`. Run `--probe` first to confirm the real shape, then the full pass.
+      unit-tested offline against three candidate response shapes. Real BEFORE numbers still
+      BLOCKED on `PIONEER_API_KEY` (run `--probe` first to confirm the shape). `--mock` mode
+      produces the full pipeline output now so downstream work is not gated: mock BEFORE is
+      71/82 overall, 43/50 hard cases — a smoke test, NOT a detector measurement, never quote it.
 - [ ] Terac study LIVE — opportunity id: ___ , quoted ETA: ___  ← CLOCK-CRITICAL, **BLOCKED**:
       Terac MCP is not configured in this environment and credits are not redeemed. Nothing in
-      Track B can unblock this; it needs the account holder. Snippet set is ready to go the
-      moment baseline redactions exist (15 = 10 hard + t25 + 4 easy).
+      Track B can unblock this; it needs the account holder. **The payload is already built** —
+      `data/study_snippets.json`, 15 snippets, 8 findable leaks, launchable as-is
+      ([[terac-study-spec]]). Send that file only; `data/study_ground_truth.json` is the key.
 - [~] `scripts/fetch_labels.py` runs clean ([[contracts/labels-json]]) — aggregation verified
       offline against a synthetic dump, emits the exact frozen shape. Auth check pending study.
 - [ ] Stripe checkbox submitted (team name + payment link + rk_ key) — needs account holder.
 
-### Note for Track A — redaction invariant found while testing
-The Detector returns only the *first* occurrence of a value that appears several times in one
-Transcript. Redacting only the returned offsets leaks every repeat. `redact()` therefore also
-scrubs literal repeats of any detected span (≥4 chars) within that Transcript. The Sentinel needs
-the same rule or it will leak on t01, t06, t14, t18, t25 — every one of those repeats a value.
+### Track A must read before writing redact.js / policy.js
+Three integration risks, one of them a contract conflict with the sentinel-core plan:
+[[integration-risks]]. The placeholder-numbering one changes `redact.js` and is cheapest to
+settle before that file exists.
 
 ## Track A (Het + Claude)
 - [ ] Sentinel core (plan: docs/superpowers/plans/2026-08-15-sentinel-core.md, branch
