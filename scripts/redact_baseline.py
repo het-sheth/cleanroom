@@ -166,20 +166,29 @@ def redact(text, detections):
     return out
 
 
-def norm(s):
-    """Loose comparison key: planted 'five two three, zero four' vs a detected substring."""
-    return re.sub(r"[^a-z0-9]", "", s.lower())
+def caught(planted_value, redacted_text):
+    """Caught iff the planted value no longer survives in the redacted output.
+
+    Measured against the redacted text rather than by comparing strings to detection spans.
+    Span-similarity matching over-credits: a detection of the email 'n.voss@vellumhr.com'
+    shares characters with the planted username 'nvoss' and scored as a catch, even though the
+    detector never found the username. Survival in the output is the fact we actually care
+    about — it is what a Terac rater can read — and it needs no similarity heuristic.
+    """
+    return planted_value not in redacted_text
 
 
-def caught(planted_value, detections):
-    """A planted entity counts as caught if a detected span covers it (either containment)."""
-    pv = norm(planted_value)
-    if not pv:
-        return None
-    for d in detections:
-        dv = norm(d["text"])
-        if dv and (pv in dv or dv in pv):
-            return d
+def covering_detection(planted_value, text, detections):
+    """Which detection overlapped this planted span — diagnostics only, not the catch metric."""
+    starts, i = [], text.find(planted_value)
+    while i != -1:
+        starts.append(i)
+        i = text.find(planted_value, i + 1)
+    for ps in starts:
+        pe = ps + len(planted_value)
+        for d in detections:
+            if d["start"] < pe and ps < d["end"]:  # any character overlap
+                return d
     return None
 
 
@@ -222,17 +231,21 @@ def main():
     per_type, misses, false_pos = {}, [], []
     for r in rows:
         dets = by_id[r["id"]]["detections"]
+        red_text = by_id[r["id"]]["redacted_text"]
         for p in r["planted"]:
             slot = per_type.setdefault(p["type"], {"planted": 0, "caught": 0, "missed": 0})
             slot["planted"] += 1
-            hit = caught(p["value"], dets)
-            if hit:
+            if caught(p["value"], red_text):
                 slot["caught"] += 1
             else:
                 slot["missed"] += 1
+                cov = covering_detection(p["value"], r["text"], dets)
                 misses.append(
                     {"id": r["id"], "type": p["type"], "value": p["value"],
-                     "note": p.get("note", ""), "difficulty": r["difficulty"]}
+                     "note": p.get("note", ""), "difficulty": r["difficulty"],
+                     # a partial overlap means the detector saw part of the span and still leaked it
+                     "partially_detected_as": {"type": cov["type"], "text": cov["text"],
+                                               "confidence": cov["confidence"]} if cov else None}
                 )
         if not r["planted"] and dets:  # tricky negative that still fired
             false_pos.append(
@@ -248,7 +261,8 @@ def main():
     hard_rows = [r for r in rows if r["difficulty"] == "hard" and r["planted"]]
     hard_p = sum(len(r["planted"]) for r in hard_rows)
     hard_c = sum(
-        1 for r in hard_rows for p in r["planted"] if caught(p["value"], by_id[r["id"]]["detections"])
+        1 for r in hard_rows for p in r["planted"]
+        if caught(p["value"], by_id[r["id"]]["redacted_text"])
     )
 
     metrics = {
