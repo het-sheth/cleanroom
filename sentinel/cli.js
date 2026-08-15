@@ -29,6 +29,18 @@ import {
 const DEFAULT_MODEL_ID = 'fastino/gliner2-privacy-filter-PII-multi';
 const DEFAULT_SALT = 'dev-salt';
 
+// Pioneer requires `encoder.schema` on every inference call; without it the API
+// 422s. Same 19 entities Track B's baseline pass sends, so both tracks ask the
+// model for exactly the same label set.
+const ENTITY_SCHEMA = {
+  entities: [
+    'person', 'email', 'phone', 'address', 'ssn', 'credit_card', 'bank_account',
+    'bank_routing', 'date_of_birth', 'username', 'api_key', 'passport',
+    'drivers_license', 'national_id', 'medical_record_number', 'insurance_id',
+    'organization', 'job_title', 'location',
+  ],
+};
+
 // Exit code for a run that completed but could not remove every span it was
 // asked to remove — distinct from 1 (the run failed) so a pipeline can tell
 // "leaked" from "crashed". Fail closed at the process level (ADR 0003).
@@ -275,7 +287,7 @@ async function scrub(argv) {
     try {
       const rawDetections = mockMode
         ? mockDetect(transcript)
-        : await detect(text, { apiKey, modelId });
+        : await detect(text, { apiKey, modelId, schema: ENTITY_SCHEMA });
 
       const decisions = rawDetections.map((d) => {
         const decidedRoute = route(d.type, d.confidence, policy);
