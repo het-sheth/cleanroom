@@ -30,6 +30,29 @@ Tamper moment: edit any character in `/tmp/demo-out/ledger.jsonl`, refresh, chai
 (The dashboard lives on branch `feat/dashboard`; the path above is the agent worktree it was
 built in. `git worktree list` if it's gone.)
 
+## Setting up on a different laptop (read this before anything else)
+
+`git clone` gives you the code but NOT the secrets — six things are gitignored on purpose. Here's
+each one and how to get it back:
+
+| Missing after clone | How to restore |
+|---|---|
+| `.env` | `cp env.example .env`, then fill: `PIONEER_API_KEY`, `TERAC_API_KEY`, `CLEANROOM_SALT`. Het carries these; send them over a private channel, never a commit. |
+| `agent_config.yaml` | `cp agent_config.example.yaml agent_config.yaml`, then run `./band-setup.sh` or paste the four Band values by hand. |
+| `.superpowers/sdd/…/progress.md` (SDD ledger) | Committed copy at **`docs/sdd-ledger-sentinel-core.md`** — that's the authoritative record of every task, ruling, and deferred minor. |
+| `.superpowers/sdd/…/review-*.diff` | Regenerate: `git diff 343a445..3fb0763 > /tmp/task5.diff` (any range in the ledger works). |
+| The dashboard | It's a branch, not a worktree: `git worktree add ../cleanroom-dashboard feat/dashboard`, then `node dashboard/server.js --dir <out>`. |
+| `node_modules/`, `.venv-band/` | Nothing to install for the Sentinel — **zero runtime dependencies**, Node ≥22, `npm test` works off a bare clone. `.venv-band` only matters for Band. |
+
+Smoke test that a fresh machine is working, no secrets needed:
+
+```
+npm test                                     # expect 97 passing
+CLEANROOM_SALT=demo node sentinel/cli.js scrub data/transcripts.jsonl --mock --out /tmp/demo-out
+```
+
+Everything runs in `--mock` today, so a laptop with no API keys can still build, test, and demo.
+
 ## Work state
 
 - **`feat/sentinel-core`** (SDD loop, plan `docs/superpowers/plans/2026-08-15-sentinel-core.md`):
