@@ -1,0 +1,229 @@
+{
+  "label": "BEFORE (MOCK — not a detector measurement)",
+  "mock": true,
+  "model_id": "mock",
+  "threshold": 0.5,
+  "transcripts": 25,
+  "overall": {
+    "planted": 82,
+    "caught": 71,
+    "missed": 11,
+    "recall": 0.866
+  },
+  "hard_cases_only": {
+    "planted": 50,
+    "caught": 43,
+    "recall": 0.86
+  },
+  "tricky_negatives": {
+    "transcripts": 5,
+    "with_false_positives": 0,
+    "detail": []
+  },
+  "per_entity_type": {
+    "person": {
+      "planted": 17,
+      "caught": 14,
+      "missed": 3,
+      "recall": 0.824
+    },
+    "email": {
+      "planted": 7,
+      "caught": 6,
+      "missed": 1,
+      "recall": 0.857
+    },
+    "ssn": {
+      "planted": 10,
+      "caught": 9,
+      "missed": 1,
+      "recall": 0.9
+    },
+    "phone": {
+      "planted": 9,
+      "caught": 8,
+      "missed": 1,
+      "recall": 0.889
+    },
+    "date_of_birth": {
+      "planted": 5,
+      "caught": 5,
+      "missed": 0,
+      "recall": 1.0
+    },
+    "address": {
+      "planted": 6,
+      "caught": 5,
+      "missed": 1,
+      "recall": 0.833
+    },
+    "api_key": {
+      "planted": 1,
+      "caught": 1,
+      "missed": 0,
+      "recall": 1.0
+    },
+    "credit_card": {
+      "planted": 6,
+      "caught": 6,
+      "missed": 0,
+      "recall": 1.0
+    },
+    "bank_routing": {
+      "planted": 4,
+      "caught": 4,
+      "missed": 0,
+      "recall": 1.0
+    },
+    "bank_account": {
+      "planted": 4,
+      "caught": 3,
+      "missed": 1,
+      "recall": 0.75
+    },
+    "passport": {
+      "planted": 1,
+      "caught": 1,
+      "missed": 0,
+      "recall": 1.0
+    },
+    "drivers_license": {
+      "planted": 1,
+      "caught": 1,
+      "missed": 0,
+      "recall": 1.0
+    },
+    "medical_record_number": {
+      "planted": 1,
+      "caught": 0,
+      "missed": 1,
+      "recall": 0.0
+    },
+    "insurance_id": {
+      "planted": 1,
+      "caught": 1,
+      "missed": 0,
+      "recall": 1.0
+    },
+    "username": {
+      "planted": 5,
+      "caught": 4,
+      "missed": 1,
+      "recall": 0.8
+    },
+    "national_id": {
+      "planted": 1,
+      "caught": 1,
+      "missed": 0,
+      "recall": 1.0
+    },
+    "job_title": {
+      "planted": 1,
+      "caught": 0,
+      "missed": 1,
+      "recall": 0.0
+    },
+    "organization": {
+      "planted": 1,
+      "caught": 1,
+      "missed": 0,
+      "recall": 1.0
+    },
+    "location": {
+      "planted": 1,
+      "caught": 1,
+      "missed": 0,
+      "recall": 1.0
+    }
+  },
+  "missed_entities": [
+    {
+      "id": "t02",
+      "type": "person",
+      "value": "Priya Raghunathan",
+      "note": "ticket requester",
+      "difficulty": "easy",
+      "partially_detected_as": null
+    },
+    {
+      "id": "t06",
+      "type": "person",
+      "value": "Devon Whitlock",
+      "note": "buyer name",
+      "difficulty": "medium",
+      "partially_detected_as": null
+    },
+    {
+      "id": "t09",
+      "type": "medical_record_number",
+      "value": "MRN-4471902",
+      "note": "appears twice",
+      "difficulty": "medium",
+      "partially_detected_as": null
+    },
+    {
+      "id": "t10",
+      "type": "email",
+      "value": "n.voss@vellumhr.com",
+      "note": "standard format",
+      "difficulty": "medium",
+      "partially_detected_as": null
+    },
+    {
+      "id": "t13",
+      "type": "ssn",
+      "value": "One one eight seven",
+      "note": "hard: spelled-out partial (last four), sentence-initial",
+      "difficulty": "hard",
+      "partially_detected_as": null
+    },
+    {
+      "id": "t15",
+      "type": "phone",
+      "value": "+47 21 555 019",
+      "note": "hard: Norway format, only in tool result",
+      "difficulty": "hard",
+      "partially_detected_as": null
+    },
+    {
+      "id": "t17",
+      "type": "job_title",
+      "value": "VP of Regulatory Affairs",
+      "note": "hard: quasi-identifier, appears twice; sole holder makes it identifying",
+      "difficulty": "hard",
+      "partially_detected_as": null
+    },
+    {
+      "id": "t24",
+      "type": "person",
+      "value": "Marguerite Okonkwo-Reyes",
+      "note": "hard: hyphenated compound surname, appears twice",
+      "difficulty": "hard",
+      "partially_detected_as": null
+    },
+    {
+      "id": "t24",
+      "type": "address",
+      "value": "1847 Kestrel Lane Apt 3B, Modesto, CA 95350",
+      "note": "recurs from t03",
+      "difficulty": "hard",
+      "partially_detected_as": null
+    },
+    {
+      "id": "t24",
+      "type": "username",
+      "value": "t-bergqvist",
+      "note": "hard: SSO handle, recurs from t16",
+      "difficulty": "hard",
+      "partially_detected_as": null
+    },
+    {
+      "id": "t25",
+      "type": "bank_account",
+      "value": "000456789012",
+      "note": "injection fixture, in free-text note, appears twice",
+      "difficulty": "hard",
+      "partially_detected_as": null
+    }
+  ]
+}
