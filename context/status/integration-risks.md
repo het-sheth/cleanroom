@@ -53,10 +53,16 @@ only the case where offsets are *present but partial*. Cheap to close either way
 
 ## 3. Mock-mode route distribution — measured against the real dataset
 
-Task 4's test asks for a below-floor case computed rather than guessed. Computed here over all 82
+Task 4's test asks for a below-floor case computed rather than guessed. Computed over all 82
 planted entities using the plan's own formula
 (`0.30 + (sha256(id+type+value)[0:4] / 0xffff) * 0.65`) and `DEFAULT_POLICY` (floor 0.35,
 ceiling 0.75):
+
+> **Verified 2026-08-15 against Track A's shipped `sentinel/lib/policy.js`**, not against a
+> Track B reimplementation of it: importing the real `route()` and `DEFAULT_POLICY` and running
+> them over `data/transcripts.jsonl` reproduces every number below exactly (46 / 25 / 11, same
+> below-floor ordering, same contextual case). These fixtures are safe to hard-code in Task 4's
+> tests — if `policy.js` later changes, this check fails loudly rather than silently.
 
 - **auto-redact 25 (30%) · consult 46 (56%) · allow-observed 11 (13%)** — all three routes are
   well populated, so the mock demo exercises the whole policy without tuning.

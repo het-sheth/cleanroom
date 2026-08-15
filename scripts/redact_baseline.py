@@ -168,7 +168,15 @@ def extract_detections(resp, text):
 
 
 def redact(text, detections):
-    """Replace each detected span with a typed, indexed placeholder: [SSN_1], [PERSON_2]."""
+    """Replace each detected span with a typed, per-type-indexed placeholder.
+
+    Numbering is per entity type, in order of first appearance: the first person is [PERSON_1],
+    the first SSN [SSN_1], the second person [PERSON_2]. Two spans with the same type and text
+    share a number. Per context/contracts/redacted-baseline.md, corrected 2026-08-15 — a single
+    counter across all types made the number meaningless, where per-type numbering tells a reader
+    how many distinct people or cards a transcript held. Track A's Sentinel numbers the same way,
+    so BEFORE and AFTER stay diffable.
+    """
     spans = sorted(detections, key=lambda d: (d["start"], -d["end"]))
     kept, last_end = [], -1
     for d in spans:  # drop overlaps; first (leftmost, longest) wins
@@ -176,12 +184,13 @@ def redact(text, detections):
             kept.append(d)
             last_end = d["end"]
 
-    assigned, counter, parts, cursor = {}, 0, [], 0
+    assigned, per_type, parts, cursor = {}, {}, [], 0
     for d in kept:
         key = (d["type"], d["text"])
         if key not in assigned:  # same span text -> same placeholder within a transcript
-            counter += 1
-            assigned[key] = f"[{d['type'].upper()}_{counter}]"
+            per_type[d["type"]] = per_type.get(d["type"], 0) + 1
+            tag = re.sub(r"[^A-Za-z0-9]", "_", d["type"]).upper()
+            assigned[key] = f"[{tag}_{per_type[d['type']]}]"
         parts.append(text[cursor:d["start"]])
         parts.append(assigned[key])
         cursor = d["end"]
