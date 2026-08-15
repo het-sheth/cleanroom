@@ -10,7 +10,7 @@ credit link is unredeemed. Both need the account holder; Track B cannot self-unb
 below is prepared so launch is a single call once it is.
 
 Prereqs, in order:
-1. `claude mcp add --transport http terac https://terac.com/mcp`, restart the session, complete
+1. `claude mcp add --transport http terac https://terac.com/api/mcp`, restart the session, complete
    the OAuth prompt.
 2. Redeem credits: https://terac.com/r/rGi7O0EfkRbzmiElg8kRjES5W2JrKNYc
 3. `PIONEER_API_KEY` in `.env` → `python3 scripts/redact_baseline.py` → `python3 scripts/build_snippets.py`.
