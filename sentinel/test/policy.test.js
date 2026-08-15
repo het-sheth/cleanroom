@@ -18,7 +18,7 @@ test('confidence below floor routes to allow-observed', () => {
 
 test('confidence exactly at floor (0.35) does not route to allow-observed', () => {
   const result = route('email', 0.35, DEFAULT_POLICY);
-  assert.notEqual(result, 'allow-observed');
+  assert.equal(result, 'consult');
 });
 
 test('contextual type routes to consult regardless of confidence', () => {
