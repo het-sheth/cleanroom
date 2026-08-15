@@ -5,9 +5,14 @@ description: Exact feasibility/launch calls and decision tree for the leak-spott
 timestamp: 2026-08-15T21:20:00Z
 ---
 
-Status: **FEASIBILITY REQUESTED** (id si6si8o8barzgjhhlrducc36, 2026-08-15 ~21:08Z, 4h-turnaround ask, gen-pop, 5 participants each rating all 15 snippets). Quote expected ~1h; launch follows decision tree below.
-credit link is unredeemed. Both need the account holder; Track B cannot self-unblock. Everything
-below is prepared so launch is a single call once it is.
+Status: **FEASIBILITY REQUESTED** — id `si6si8o8barzgjhhlrducc36`, 2026-08-15 ~21:08Z, 4h-turnaround
+ask, gen-pop, 5 participants each rating all 15 snippets. Quote expected ~1h; launch follows the
+decision tree below. Not yet launched — the clock starts at launch, not at quote.
+
+Results path is verified ready: `https://terac.com/api/external/v2` responds and rejects a bad
+Bearer token with a clean 401, so `scripts/fetch_labels.py --probe` will confirm auth the moment
+`TERAC_API_KEY` exists. Run it *before* results arrive — it is the cheapest way to find out that
+auth is wrong while there is still time to fix it.
 
 Prereqs, in order:
 1. `claude mcp add --transport http terac https://terac.com/api/mcp`, restart the session, complete

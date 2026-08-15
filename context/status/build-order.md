@@ -14,8 +14,11 @@ security moment.
       regenerate with `python3 scripts/gen_transcripts.py` (validates verbatim planting on write).
       82 planted entities / 19 types; 10 hard-case transcripts, 5 tricky negatives, t25 injection.
 - [~] Baseline redaction + BEFORE metrics ([[contracts/redacted-baseline]]) — `scripts/redact_baseline.py`
-      unit-tested offline against three candidate response shapes. Real BEFORE numbers still
-      BLOCKED on `PIONEER_API_KEY` (run `--probe` first to confirm the shape). `--mock` mode
+      now adapted to the live-verified contract ([[../research/pioneer]]): FLAT payload with the
+      REQUIRED `schema` field, response flattened from the `result.data.entities` dict-of-types,
+      and cold-start 403/422 retried at 25s while `card_required` / missing-schema fail fast.
+      Verified offline against the documented shape + both error paths. Real BEFORE numbers
+      BLOCKED only on the key itself — Track B has none. `--mock` mode
       produces the full pipeline output now so downstream work is not gated: mock BEFORE is
       71/82 overall, 43/50 hard cases — a smoke test, NOT a detector measurement, never quote it.
 - [ ] Terac study LIVE — opportunity id: ___ , quoted ETA: ___  ← CLOCK-CRITICAL, **BLOCKED**:

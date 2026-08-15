@@ -42,9 +42,17 @@ A value appearing several times in one Transcript is only fully removed if *ever
 replaced. Track B's redactor therefore scrubs literal repeats of any detected span (≥4 chars)
 after applying the returned offsets, per fail-closed (ADR 0003).
 
-Whether Pioneer returns one span per occurrence or only the first is **unverified** — no live call
-has been made yet (no API key; see [[build-order]]). {{unverified — resolve with
-`scripts/redact_baseline.py --probe` the moment a key exists}} What *is* measured is the blast
+Whether Pioneer returns one span per occurrence or only the first is **still unverified** — the
+inference contract is now live-verified ([[../research/pioneer]]) but Track B has no key yet, so no
+call has been made from this side. {{unverified — one `scripts/redact_baseline.py --probe` run
+settles it}}
+
+`--probe` now answers it directly rather than leaving it to inspection: it runs against t01, which
+repeats its SSN, email and person name, counts how many spans the API returns for each against how
+many occurrences exist in the text, and prints one of two verdicts — *repeat-scrub is redundant but
+harmless* or *repeat-scrub is LOAD-BEARING, tell Track A*. Paste the verdict here when it runs.
+
+What *is* measured is the blast
 radius if it returns only the first: **t01, t06, t14, t18 and t25 each repeat a planted value**, so
 offset-only redaction leaks in 5 of 25 transcripts, t25 being the injection fixture we demo.
 

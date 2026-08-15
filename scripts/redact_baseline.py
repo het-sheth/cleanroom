@@ -34,6 +34,30 @@ ENDPOINT = "https://api.pioneer.ai/inference"
 MODEL_ID = "fastino/gliner2-privacy-filter-PII-multi"
 THRESHOLD = 0.5  # default; do NOT tune here — tuning happens after Terac labels
 
+# `schema` is REQUIRED by the API (422 `encoder.schema must be provided` without it) — verified
+# live 2026-08-15, see context/research/pioneer.md. The payload stays FLAT; the `encoder.` prefix
+# in the error is internal naming, not a nesting instruction.
+#
+# Deliberately a bare entity list, matching the planted-type vocabulary in
+# context/contracts/transcripts-jsonl.md. Pioneer also accepts {type: description} pairs, and
+# natural-language descriptions measurably improve precision — but that is the no-training tuning
+# lever, and a tuned BEFORE number would flatter the baseline and shrink the very delta the demo
+# exists to show. Descriptions belong in the AFTER pass, driven by Terac labels.
+ENTITY_SCHEMA = {
+    "entities": [
+        "person", "email", "phone", "address", "ssn", "credit_card", "bank_account",
+        "bank_routing", "date_of_birth", "username", "api_key", "passport",
+        "drivers_license", "national_id", "medical_record_number", "insurance_id",
+        "organization", "job_title", "location",
+    ]
+}
+
+# Cold start is real: first calls 403 -> 422 -> "timed out waiting for provider capacity", warming
+# within ~1 min. These are transient and need ~25s spacing, unlike the two permanent failures
+# below, which no amount of retrying fixes.
+WARMUP_SECONDS = 25
+PERMANENT = ("card_required", "schema must be provided")
+
 
 def mock_detections(row):
     """Stand-in detections derived from planted ground truth — NOT a model measurement.
@@ -84,24 +108,36 @@ def load_key():
     )
 
 
-def call_pioneer(text, key, retries=3):
-    body = json.dumps({"model_id": MODEL_ID, "text": text, "threshold": THRESHOLD}).encode()
-    req = urllib.request.Request(
-        ENDPOINT, data=body, headers={"X-API-Key": key, "Content-Type": "application/json"}
-    )
+def call_pioneer(text, key, retries=5):
+    """POST one transcript. Payload is FLAT and carries the required schema."""
+    body = json.dumps(
+        {"model_id": MODEL_ID, "text": text, "threshold": THRESHOLD, "schema": ENTITY_SCHEMA}
+    ).encode()
     for attempt in range(retries):
+        req = urllib.request.Request(  # rebuilt each attempt; a Request is not reusable
+            ENDPOINT, data=body, headers={"X-API-Key": key, "Content-Type": "application/json"}
+        )
         try:
-            with urllib.request.urlopen(req, timeout=60) as r:
+            with urllib.request.urlopen(req, timeout=90) as r:
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
             detail = e.read().decode()[:400]
-            if e.code in (429, 500, 502, 503, 504) and attempt < retries - 1:
-                time.sleep(2 ** attempt)
+            if any(p in detail for p in PERMANENT):
+                sys.exit(
+                    f"Pioneer HTTP {e.code} — not retryable: {detail}\n"
+                    "  card_required: Pro plan alone is not enough, a card must be on file.\n"
+                    "  schema: the request lost its schema field; this script always sends one."
+                )
+            # 403/422 here are cold start, not auth or payload errors — see pioneer.md.
+            if e.code in (403, 408, 422, 429, 500, 502, 503, 504) and attempt < retries - 1:
+                print(f"    warming ({e.code}), retry in {WARMUP_SECONDS}s "
+                      f"[{attempt + 1}/{retries - 1}]", flush=True)
+                time.sleep(WARMUP_SECONDS)
                 continue
             sys.exit(f"Pioneer HTTP {e.code}: {detail}")
         except urllib.error.URLError as e:
             if attempt < retries - 1:
-                time.sleep(2 ** attempt)
+                time.sleep(WARMUP_SECONDS)
                 continue
             sys.exit(f"Pioneer unreachable: {e}")
 
@@ -109,10 +145,35 @@ def call_pioneer(text, key, retries=3):
 def extract_detections(resp, text):
     """Normalize Pioneer's response into our detection shape.
 
-    The exact response shape is unverified (see context/research/pioneer.md), so this accepts
-    the plausible variants rather than guessing at one. Run --probe first; if none of these
-    match, print shows the raw body and this is the ONE function to edit.
+    Primary path is the shape verified live 2026-08-15: entities grouped by type as a dict at
+    `result.data.entities`, each hit carrying text/confidence/start/end. The looser variants below
+    are kept as fallbacks only — they cost nothing and cover a response-shape change mid-event.
+    Matches the normalization in sentinel/lib/detector.js so both tracks flatten identically.
     """
+    # Verified shape first: {"result": {"data": {"entities": {"person": [...], "email": [...]}}}}
+    nested = (resp or {}).get("result", {}).get("data", {}).get("entities") \
+        if isinstance(resp, dict) else None
+    if isinstance(nested, dict):
+        out = []
+        for typ, hits in nested.items():
+            for h in hits if isinstance(hits, list) else [hits]:
+                if not isinstance(h, dict):
+                    continue
+                span = h.get("text") or h.get("span")
+                if span is None:
+                    continue
+                start, end = h.get("start"), h.get("end")
+                if start is None or end is None or text[start:end] != span:
+                    i = text.find(span)
+                    if i == -1:
+                        continue
+                    start, end = i, i + len(span)
+                conf = h.get("confidence", h.get("score"))
+                out.append({"type": str(typ).lower(), "text": span,
+                            "start": int(start), "end": int(end),
+                            "confidence": round(float(conf), 4) if conf is not None else None})
+        return out
+
     # Find the list of spans wherever it lives.
     candidates = None
     if isinstance(resp, list):
@@ -245,14 +306,45 @@ def main():
     rows = [json.loads(l) for l in TRANSCRIPTS.open()]
 
     if args.probe:
-        resp = call_pioneer(rows[0]["text"], key)
-        print("RAW RESPONSE for t01 (adapt extract_detections() to this shape):\n")
-        print(json.dumps(resp, indent=2)[:4000])
+        # t01 deliberately repeats its SSN, email and person name, so one call answers both
+        # questions: is the response shape what pioneer.md says, and does Pioneer return every
+        # occurrence of a repeated value or only the first? The second one decides whether the
+        # repeat-scrub in redact() is load-bearing or merely belt-and-braces
+        # (context/status/integration-risks.md finding 2, currently marked unverified).
+        row = rows[0]
+        resp = call_pioneer(row["text"], key)
+        print("RAW RESPONSE for t01:\n")
+        print(json.dumps(resp, indent=2)[:3000])
+
         try:
-            dets = extract_detections(resp, rows[0]["text"])
-            print(f"\nparsed OK: {len(dets)} detections; first: {dets[:2]}")
+            dets = extract_detections(resp, row["text"])
         except ValueError as e:
-            print(f"\nPARSE FAILED: {e}")
+            print(f"\nPARSE FAILED — edit extract_detections(): {e}")
+            return
+        print(f"\nparsed OK via {'verified nested shape' if isinstance(resp, dict) and resp.get('result') else 'fallback shape'}"
+              f": {len(dets)} detections")
+        for d in dets[:5]:
+            print(f"    {d['type']:<12} {d['confidence']}  {d['text'][:44]!r}")
+
+        print("\nREPEATED-VALUE CHECK (integration-risks finding 2):")
+        verdict = []
+        for p in row["planted"]:
+            in_text = row["text"].count(p["value"])
+            if in_text < 2:
+                continue
+            returned = sum(1 for d in dets if d["text"] == p["value"])
+            ok = returned >= in_text
+            verdict.append(ok)
+            print(f"    {p['type']:<8} {p['value'][:30]!r}: appears {in_text}x, "
+                  f"API returned {returned} span(s) -> {'all occurrences' if ok else 'INCOMPLETE'}")
+        if verdict:
+            if all(verdict):
+                print("  => Pioneer returns every occurrence. The repeat-scrub in redact() is\n"
+                      "     redundant here but harmless; keep it, it still covers partial writes.")
+            else:
+                print("  => Pioneer returns only some occurrences. The repeat-scrub is LOAD-BEARING;\n"
+                      "     offset-only redaction would leak. Tell Track A — same rule in redact.js.")
+            print("  Record the verdict in context/status/integration-risks.md finding 2.")
         return
 
     if args.limit:
