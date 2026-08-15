@@ -17,10 +17,12 @@ security moment.
 - [ ] Stripe checkbox submitted (team name + payment link + rk_ key)
 
 ## Track A (Het + Claude)
-- [ ] Sentinel: Claude Code hook → Pioneer inference → typed-placeholder redaction
-- [ ] Policy table + routing (pure function, versioned) + ledger chain ([[contracts/ledger-row]])
-- [ ] Launch GLiNER2 fine-tune job early (Pioneer `/generate` NER data on hard-case patterns) —
-      background, minutes-to-hours ([[research/pioneer]])
+- [ ] Sentinel core (plan: docs/superpowers/plans/2026-08-15-sentinel-core.md, branch
+      feat/sentinel-core, Tasks 1–4): policy routing, hash-chain ledger, Pioneer detector client,
+      redactor, mock-mode CLI ([[contracts/ledger-row]])
+- [ ] Fine-tune loop (plan Task 5, elevated per 2026-08-15 decision): `/generate` NER data →
+      launch LoRA on gliner2-base → job-id shown live in demo; ≥20-label gate + 1-job cap in code
+      ([[research/pioneer]]). CONFIRM AT BOOTH: does hackathon credit cover /felix/training-jobs?
 - [ ] Band room: Specialist + exporter-as-agent, metadata-only consults
       ([[contracts/consultation-payload]]), fail-closed gate
 - [ ] Escalation ladder caps: Terac auto-launch (synthetic only), fine-tune trigger ≥20 labels,
