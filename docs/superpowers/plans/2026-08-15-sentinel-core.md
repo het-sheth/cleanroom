@@ -6,7 +6,9 @@ Spec authority: `CONTEXT.md` (vocabulary), `docs/adr/0001–0005` (decisions),
 ## Global Constraints
 
 - Node ≥22, plain ESM JavaScript (`"type": "module"`), **zero runtime dependencies** — `fetch` and
-  `node:crypto` are built in. Tests use `node:test` + `node:assert/strict`, run via `node --test sentinel/test/`.
+  `node:crypto` are built in. Tests use `node:test` + `node:assert/strict`, run via `npm test`.
+  (Not `node --test sentinel/test/` — on Node 24 that resolves the directory as a module and dies
+  with MODULE_NOT_FOUND, which reads as a test failure. `npm test` uses the glob and passes 29/29.)
 - All code under `sentinel/` (lib/, test/, cli.js). Do not touch `data/`, `scripts/`, `prompts/`,
   `context/` (Track B / controller territory).
 - All fixture PII is synthetic. Never use a real person's data.
