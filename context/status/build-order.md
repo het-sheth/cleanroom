@@ -18,9 +18,9 @@ security moment.
       BLOCKED on `PIONEER_API_KEY` (run `--probe` first to confirm the shape). `--mock` mode
       produces the full pipeline output now so downstream work is not gated: mock BEFORE is
       71/82 overall, 43/50 hard cases — a smoke test, NOT a detector measurement, never quote it.
-- [~] Terac study — **DRAFT BUILT, awaiting Het's launch approval**. Opportunity
+- [x] Terac study **LIVE** (launched 22:18:20Z). Opportunity
       `ydwueq13zlc9k7nb9w1w3s6y`, 5 participants x $25 confirmed CPI = $125 (balance covers it).
-      Review: https://terac.com/cleanroom-msuutrxi/default-project-zq2odgonq5b7r3cplbylw7tk/opportunities/create?id=ydwueq13zlc9k7nb9w1w3s6y
+      Submissions: https://terac.com/cleanroom-msuutrxi/default-project-zq2odgonq5b7r3cplbylw7tk/opportunities/ydwueq13zlc9k7nb9w1w3s6y/submissions
       ← CLOCK-CRITICAL: results must land before 6:45 PM PDT to make the demo., **BLOCKED**:
       Terac MCP is not configured in this environment and credits are not redeemed. Nothing in
       Track B can unblock this; it needs the account holder. **The payload is already built** —

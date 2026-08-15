@@ -2,17 +2,18 @@
 type: worked-example
 title: Terac study — ready-to-launch spec
 description: Exact feasibility/launch calls and decision tree for the leak-spotting study (Task 3)
-timestamp: 2026-08-15T22:10:00Z
+timestamp: 2026-08-15T22:20:00Z
 ---
 
-Status: **DRAFT BUILT, AWAITING LAUNCH APPROVAL** (2026-08-15 ~22:08Z).
+Status: **LIVE** — launched 2026-08-15T22:18:20Z by Het's explicit go.
 
 - Feasibility `si6si8o8barzgjhhlrducc36` → **RESPONDED**: $17.50 incentive, **$25.00 CPI**.
 - Draft opportunity: **`ydwueq13zlc9k7nb9w1w3s6y`**, 5 participants, **$125.00 total**, honored
   at the confirmed CPI (not a machine estimate). Org balance $125.00 — exactly covers it.
 - Review/launch: https://terac.com/cleanroom-msuutrxi/default-project-zq2odgonq5b7r3cplbylw7tk/opportunities/create?id=ydwueq13zlc9k7nb9w1w3s6y
-- Terac requires explicit post-draft approval; nothing is charged and no recruitment starts until
-  `terac_launch_draft_opportunity` is called.
+- Submissions: https://terac.com/cleanroom-msuutrxi/default-project-zq2odgonq5b7r3cplbylw7tk/opportunities/ydwueq13zlc9k7nb9w1w3s6y/submissions
+- Recruitment: https://terac.com/cleanroom-msuutrxi/default-project-zq2odgonq5b7r3cplbylw7tk/opportunities/ydwueq13zlc9k7nb9w1w3s6y/recruitment
+- Window closes 2026-08-20; the demo needs whatever has landed by 6:45 PM PDT today.
 Prereqs — all now DONE: Terac MCP added, credits redeemed ($125 balance), payload built.
 
 ## How the draft is shaped (decisions made at build time)

@@ -95,3 +95,29 @@ holds. Cost if wrong: slightly smaller pool, marginally slower recruitment.
 Ruling: 5 participants, not the 1 discussed while the balance was $25 — Het topped up to exactly
 5 x $25 after being quoted that figure. Cost if wrong: $100 of credit; recoverable by editing the
 draft before launch.
+Task 5: review — spec ❌ (2 Important). Ruling on #2 (report claims sentinel/-only but diff shows
+context/status/terac-study-spec.md): NOT a finding — verified `git log 343a445..3fb0763`, that file
+came from 1362140, a CONTROLLER docs commit that landed inside the review range; 3fb0763 touches
+only sentinel/. Implementer's scope claim is accurate; the packaging was mine. Cost if wrong: none.
+Ruling on #1 (generateTrainingData accepts an object with no dataset_id/id/dataset key, returning
+datasetRef undefined; cli.js then POSTs a training job whose dataset_id is dropped by
+JSON.stringify): REAL, enters the fix loop. The brief mandates the throw-on-unrecognized-shape
+convention for this client and the endpoint is only partially documented, so failing loud is the
+specified behaviour. Cost if wrong: an extra throw on a response shape Pioneer might legitimately
+return — recoverable, and safer than a silent no-dataset training job in a live demo.
+Task 5: 3 minors deferred (deriveFinetuneLabels type-branch untested; --dry-run prints a
+placeholder dataset_id for the second body; finetune-status deployed branch untested).
+Terac study LAUNCHED 2026-08-15T22:18:20Z on Het's explicit go (guidebook confirms Terac MCP use is
+a hard requirement for ALL projects). Opportunity ydwueq13zlc9k7nb9w1w3s6y, active, 5 participants,
+$125.00 charged. Recruiting; submissions poll via terac_get_opportunity.
+GUIDEBOOK ARRIVED (authoritative rules, previously absent from repo). Deltas vs what we assumed:
+(1) Terac criterion is "use real human input to make the project MEASURABLY better — show a clear
+before and after", not merely "run a study". Our AFTER pass depends on labels landing in time.
+(2) STRIPE IS REQUIRED for BOTH main prizes (Best Overall Project AND Best Overall Agent-Run
+Company) — needs a personal Stripe account, one Payment Link, and a restricted rk_ key (Balance+
+Charges read only) submitted to organizers. Track B owed this and it is still UNDONE. Highest-value
+unblocked item after the study.
+(3) Band criterion is sharper than recorded: needs a REAL dependency — "a handoff where one agent's
+answer changes because of another's finding... or a verdict one agent can genuinely block."
+Our exporter-blocks-on-specialist-verdict design satisfies this, but only if actually wired.
+(4) Render requires Render WORKFLOWS specifically. Not started; stretch only.
