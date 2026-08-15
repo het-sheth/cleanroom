@@ -123,3 +123,12 @@ Our exporter-blocks-on-specialist-verdict design satisfies this, but only if act
 (4) Render requires Render WORKFLOWS specifically. Not started; stretch only.
 Task 5: fix round 1/5 (1 addressed per implementer — generateTrainingData now throws on unresolved
 datasetRef; commit d020b41, 98/98). Scoped re-review dispatched (62423c4..d020b41).
+Task 5: fix round 1/5 (1 addressed, 0 open; commits 3fb0763..d020b41). Re-review: ADDRESSED, no new
+breakage; call site cli.js:364-365 confirmed closed.
+Task 5: minor (deferred, from re-review): datasetRef is computed with `??`, so a body like
+{dataset: null} coalesces to null (not undefined) and slips the new `=== undefined` guard, whereas
+launchFineTune/jobStatus use `== null`. Residual asymmetry, not a gap in the required fix.
+Task 5: minor (deferred): the two throw sites in generateTrainingData duplicate the same message
+template string.
+Task 5: complete (commits 343a445..d020b41, review clean after round 1)
+ALL 5 TASKS COMPLETE. Dispatching final whole-branch review (MERGE_BASE 25909dc), most capable model.
