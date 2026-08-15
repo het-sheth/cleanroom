@@ -121,3 +121,5 @@ unblocked item after the study.
 answer changes because of another's finding... or a verdict one agent can genuinely block."
 Our exporter-blocks-on-specialist-verdict design satisfies this, but only if actually wired.
 (4) Render requires Render WORKFLOWS specifically. Not started; stretch only.
+Task 5: fix round 1/5 (1 addressed per implementer — generateTrainingData now throws on unresolved
+datasetRef; commit d020b41, 98/98). Scoped re-review dispatched (62423c4..d020b41).
