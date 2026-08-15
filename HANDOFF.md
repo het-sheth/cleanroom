@@ -19,19 +19,19 @@ in `sentinel/`. Pitch wedge + judge Q&A in `context/research/competitive.md` —
 observed-not-acted + HMAC-confirm, NOT "accurate detection" (banned phrase; GLiNER2-PII SPY span-F1
 is 0.477).
 
-## ⚠️ WORK IN FLIGHT AT HANDOFF TIME
+## Branch state
 
-A fix wave for the final whole-branch review was dispatched and had **not landed** when this was
-written. `git status` showed uncommitted edits to `sentinel/lib/detector.js` and
-`sentinel/lib/redact.js`. **First action: check `git log` and `git status`.** If those edits are
-uncommitted and unexplained, read `.superpowers/sdd/2026-08-15-sentinel-core/final-fix-report.md`
-(the fixer was told to write it there) and run `npm test` before doing anything else.
+`a8ed445` pushed, working tree clean, **115/115 tests passing**. All 5 plan tasks complete; the
+final whole-branch review ran and its fixes landed in `c2422d8`.
 
-The fix wave addresses one Critical + four Important findings, listed under "Final review" below.
+**The one thing not yet done on the code:** that fix diff (`git diff 33549ae..c2422d8`, 7 files,
++565/-76, touching `detector.js` and `redact.js`) has **not been reviewed by anyone**. Re-review it
+before merging. Details of what it fixed are under "Final review" below; the full report is at
+`.superpowers/sdd/2026-08-15-sentinel-core/final-fix-report.md`.
 
 ## What is DONE and verified
 
-- **Sentinel core, Tasks 1–5 complete**, each task-reviewed clean. 98 tests passing via `npm test`
+- **Sentinel core, Tasks 1–5 complete**, each task-reviewed clean. 115 tests passing via `npm test`
   (zero runtime dependencies — a bare clone runs them).
 - **Demo path works end to end in mock mode.** Verified by running it:
   ```
@@ -64,7 +64,7 @@ The fix wave addresses one Critical + four Important findings, listed under "Fin
 | Sentinel unit + CLI, mock mode | ✅ 98 tests |
 | CLI → dashboard → tamper detection | ✅ run by hand |
 | **Pioneer live → our `detector.js`** | ❌ **never run.** The API was probed with curl; our client code has never touched it |
-| **The fail-open fix** | ⏳ in flight, unreviewed |
+| **The fail-open fix** | ✅ landed + controller-verified; ⚠️ the fix diff itself is unreviewed |
 | **Terac submissions → `fetch_labels.py`** | ❌ **broken as written** — see below |
 | **Band → anything** | ❌ zero integration; `cli.js` still hardcodes `disposition: "timeout"` |
 | Fine-tune against real Pioneer | ❌ only mocked `fetchImpl` |
