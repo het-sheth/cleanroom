@@ -27,10 +27,15 @@ security moment.
       offline against a synthetic dump, emits the exact frozen shape. Auth check pending study.
 - [ ] Stripe checkbox submitted (team name + payment link + rk_ key) — needs account holder.
 
-### Track A must read before writing redact.js / policy.js
-Three integration risks, one of them a contract conflict with the sentinel-core plan:
-[[integration-risks]]. The placeholder-numbering one changes `redact.js` and is cheapest to
-settle before that file exists.
+### Cross-track status
+All three [[integration-risks]] are settled. Per-type placeholder numbering is **done on both
+sides** — Track A acked and corrected [[contracts/redacted-baseline]]; Track B's redactor now
+numbers per type and uses Track A's token normalization. Finding 3's fixtures are verified
+against the shipped `sentinel/lib/policy.js` (46 consult / 25 auto-redact / 11 allow-observed).
+
+Track B's remaining three items are **all blocked on credentials or a human account**, not on
+work: real BEFORE numbers (Pioneer 403 `card_required`), the Stripe checkbox, and Replay QA
+signup. See the blocked list above.
 
 ## Track A (Het + Claude)
 - [ ] Sentinel core (plan: docs/superpowers/plans/2026-08-15-sentinel-core.md, branch
