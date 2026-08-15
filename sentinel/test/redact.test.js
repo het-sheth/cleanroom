@@ -334,7 +334,9 @@ test('C1: a {-1,-1} span is redacted by literal text, not spliced at -1 (ADR 000
   );
   assert.equal(redactedText, 'SSN [SSN_1] on file.');
   assert.deepEqual(replacements, [], 'a -1 span has no offset replacement to report');
-  assert.deepEqual(unresolved, [{ type: 'ssn', token: '[SSN_1]', scrubbed: true }]);
+  assert.deepEqual(unresolved, [
+    { type: 'ssn', token: '[SSN_1]', scrubbed: true, reason: 'literal-scrub' },
+  ]);
 });
 
 test('C1: a null-offset unlocatable span is redacted by literal text', () => {
@@ -389,7 +391,7 @@ test('C1: an unlocatable span whose text never occurs literally is reported unsc
   const { redactedText, unresolved } = applyDispositions(text, decisions);
   assert.equal(redactedText, text, 'nothing matched literally, so nothing changed');
   assert.deepEqual(unresolved, [
-    { type: 'email', token: '[EMAIL_1]', scrubbed: false },
+    { type: 'email', token: '[EMAIL_1]', scrubbed: false, reason: 'no-literal-match' },
   ]);
 });
 
@@ -458,4 +460,108 @@ test('token normalization uppercases the type and replaces non-alphanumerics wit
 
   const { redactedText } = applyDispositions(text, decisions);
   assert.equal(redactedText, 'title: [JOB_TITLE_1]');
+});
+
+// ---- F1: the repeat-scrub length floor must not apply to unpositioned spans
+
+test('F1: a short unlocatable span is scrubbed despite the repeat-scrub length floor (ADR 0003)', () => {
+  const text = 'PIN 123 on file.';
+  const decisions = [
+    decision({
+      type: 'pin',
+      text: '123',
+      start: null,
+      end: null,
+      unlocatable: true,
+      confidence: 0.99,
+    }),
+  ];
+
+  const { redactedText, unresolved } = applyDispositions(text, decisions);
+  assert.equal(
+    redactedText.includes('123'),
+    false,
+    'a sub-4-char unlocatable span must not survive verbatim',
+  );
+  assert.equal(redactedText, 'PIN [PIN_1] on file.');
+  assert.deepEqual(unresolved, [
+    { type: 'pin', token: '[PIN_1]', scrubbed: true, reason: 'literal-scrub' },
+  ]);
+});
+
+test('F1: the length floor still applies to a positioned span, which is already redacted at its offsets', () => {
+  // "Ann" also occurs inside "Annapolis" — the floor exists so a short
+  // positioned span cannot mass-replace across the transcript.
+  const text = 'Ann flew to Annapolis.';
+  const start = text.indexOf('Ann');
+  const decisions = [
+    decision({ type: 'person', text: 'Ann', start, end: start + 3 }),
+  ];
+
+  const { redactedText, unresolved } = applyDispositions(text, decisions);
+  assert.equal(redactedText, '[PERSON_1] flew to Annapolis.');
+  assert.deepEqual(unresolved, []);
+});
+
+// ---- F2: an out-of-range positioned span must not append its token --------
+
+test('F2: an out-of-range span is treated as unpositioned, not appended past the text (ADR 0003)', () => {
+  const text = 'short text';
+  const decisions = [
+    decision({
+      type: 'ssn',
+      text: '523-04-0002',
+      start: 100,
+      end: 111,
+      confidence: 0.99,
+    }),
+  ];
+
+  const { redactedText, replacements, unresolved } = applyDispositions(text, decisions);
+  assert.equal(
+    redactedText,
+    'short text',
+    'a token must never be appended for a span whose offsets are out of range',
+  );
+  assert.deepEqual(replacements, [], 'an out-of-range span has no offset replacement');
+  assert.deepEqual(unresolved, [
+    { type: 'ssn', token: '[SSN_1]', scrubbed: false, reason: 'no-literal-match' },
+  ]);
+});
+
+test('F2: an out-of-range span whose text does occur is redacted by literal scrub', () => {
+  const text = 'SSN 523-04-0002 on file.';
+  const decisions = [
+    decision({ type: 'ssn', text: '523-04-0002', start: 100, end: 111 }),
+  ];
+
+  const { redactedText, unresolved } = applyDispositions(text, decisions);
+  assert.equal(redactedText, 'SSN [SSN_1] on file.');
+  assert.equal(unresolved[0].scrubbed, true);
+});
+
+test('F2: a span ending exactly at text.length is still positioned', () => {
+  const text = 'name is Dana';
+  const start = text.indexOf('Dana');
+  const decisions = [decision({ type: 'person', text: 'Dana', start, end: text.length })];
+
+  const { redactedText, replacements, unresolved } = applyDispositions(text, decisions);
+  assert.equal(redactedText, 'name is [PERSON_1]');
+  assert.equal(replacements.length, 1);
+  assert.deepEqual(unresolved, []);
+});
+
+// ---- F4: a span with no resolvable text must surface, not vanish ----------
+
+test('F4: a redacted span whose text resolves to empty is reported, not silently dropped', () => {
+  const text = 'nothing to see here';
+  const decisions = [
+    decision({ type: 'ssn', text: '', start: null, end: null, unlocatable: true }),
+  ];
+
+  const { redactedText, unresolved } = applyDispositions(text, decisions);
+  assert.equal(redactedText, text, 'an empty span text must not splice tokens between characters');
+  assert.deepEqual(unresolved, [
+    { type: 'ssn', token: '[SSN_1]', scrubbed: false, reason: 'no-span-text' },
+  ]);
 });

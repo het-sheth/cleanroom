@@ -29,18 +29,24 @@ function shouldRedact(decision) {
  * Does this span carry offsets that select a real, non-empty range?
  *
  * Anything else — the detector's `unlocatable` flag, a negative or
- * non-integer offset, an empty or inverted range — must never reach the
- * offset splice: `text.slice(-1, -1)` is `''`, which redacted nothing while
- * inserting the token before the last character, leaking the span (ADR
+ * non-integer offset, an empty or inverted range, or a range that runs past
+ * the end of the text — must never reach the offset splice: `text.slice(-1,
+ * -1)` is `''`, which redacted nothing while inserting the token before the
+ * last character, and an out-of-range range simply appends the token while
+ * leaving the span text wherever it really is — both leak the span (ADR
  * 0003). Such spans are still redacted, by literal text in `scrubRepeats`.
+ *
+ * `text` is required: the range must be checked against the transcript this
+ * span is being applied to, not merely against itself.
  */
-function isPositioned(span) {
+function isPositioned(span, text) {
   return (
     span.unlocatable !== true &&
     Number.isInteger(span.start) &&
     Number.isInteger(span.end) &&
     span.start >= 0 &&
-    span.end > span.start
+    span.end > span.start &&
+    span.end <= text.length
   );
 }
 
@@ -51,7 +57,7 @@ function isPositioned(span) {
  */
 function spanTextOf(span, text) {
   if (typeof span.text === 'string' && span.text !== '') return span.text;
-  return isPositioned(span) ? text.slice(span.start, span.end) : '';
+  return isPositioned(span, text) ? text.slice(span.start, span.end) : '';
 }
 
 function overlaps(a, b) {
@@ -71,10 +77,11 @@ function contains(outer, inner) {
  * offsets, and a `-1` span would compare as overlapping everything.
  *
  * @param {object[]} candidates
+ * @param {string} text - original transcript, for the range check
  * @returns {object[]} kept, non-overlapping spans
  */
-function resolveOverlaps(candidates) {
-  const sorted = candidates.filter(isPositioned).sort(
+function resolveOverlaps(candidates, text) {
+  const sorted = candidates.filter((span) => isPositioned(span, text)).sort(
     (a, b) => a.start - b.start || b.end - b.start - (a.end - a.start),
   );
 
@@ -127,8 +134,10 @@ function typeToken(type) {
  */
 function assignTokens(keptSpans, text) {
   const ordered = [
-    ...keptSpans.filter(isPositioned).sort((a, b) => a.start - b.start),
-    ...keptSpans.filter((span) => !isPositioned(span)),
+    ...keptSpans
+      .filter((span) => isPositioned(span, text))
+      .sort((a, b) => a.start - b.start),
+    ...keptSpans.filter((span) => !isPositioned(span, text)),
   ];
   const perTypeCount = new Map();
   const tokenByKey = new Map();
@@ -154,7 +163,7 @@ function assignTokens(keptSpans, text) {
 function applyOffsetReplacements(text, keptSpansWithTokens) {
   let result = text;
   const byStartDesc = keptSpansWithTokens
-    .filter(isPositioned)
+    .filter((span) => isPositioned(span, text))
     .sort((a, b) => b.start - a.start);
   for (const span of byStartDesc) {
     result = result.slice(0, span.start) + span.token + result.slice(span.end);
@@ -173,22 +182,38 @@ function applyOffsetReplacements(text, keptSpansWithTokens) {
  * so the span text comes from the detector's own report first and the
  * offset slice second — slicing an unpositioned span yields `''`, which the
  * length floor below then skipped, and the span leaked.
+ *
+ * The `REPEAT_SCRUB_MIN_LENGTH` floor exists only to stop a *positioned*
+ * span's short text from mass-replacing across the transcript — that span is
+ * already redacted at its offsets. For an unpositioned span this scrub is
+ * the ONLY redaction there is, so the floor must not apply to it: a 3-char
+ * PIN reported unlocatable used to survive verbatim (ADR 0003, fail closed).
+ * An entry is force-scrubbed when ANY span sharing its (type, text) is
+ * unpositioned.
  */
 function scrubRepeats(redactedText, keptSpansWithTokens, originalText) {
-  const seen = new Set();
-  const entries = [];
+  const byKey = new Map();
   for (const span of keptSpansWithTokens) {
     const spanText = spanTextOf(span, originalText);
+    // Nothing to search for, and `split('')` would splice the token between
+    // every character of the transcript. Such a span is reported unresolved.
+    if (spanText === '') continue;
     const key = `${span.type}::${spanText}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    entries.push({ spanText, token: span.token });
+    const unpositioned = !isPositioned(span, originalText);
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.force = existing.force || unpositioned;
+      continue;
+    }
+    byKey.set(key, { spanText, token: span.token, force: unpositioned });
   }
-  entries.sort((a, b) => b.spanText.length - a.spanText.length);
+  const entries = [...byKey.values()].sort(
+    (a, b) => b.spanText.length - a.spanText.length,
+  );
 
   let result = redactedText;
-  for (const { spanText, token } of entries) {
-    if (spanText.length < REPEAT_SCRUB_MIN_LENGTH) continue;
+  for (const { spanText, token, force } of entries) {
+    if (!force && spanText.length < REPEAT_SCRUB_MIN_LENGTH) continue;
     result = result.split(spanText).join(token);
   }
   return result;
@@ -200,28 +225,31 @@ function scrubRepeats(redactedText, keptSpansWithTokens, originalText) {
  * `unresolved` lists redacted spans that had no usable offsets: they were
  * scrubbed by literal text only, so the caller can surface them instead of
  * letting a silent `route: auto-redact` ledger row imply a clean redaction.
- * `scrubbed: false` means the span's text never occurred literally in the
- * transcript — nothing was removed for it, and a near-match may survive.
+ * `scrubbed: false` means nothing was removed for the span, and `reason`
+ * says why: `no-literal-match` (its text never occurred literally — a
+ * near-match may survive) or `no-span-text` (the detector reported no text
+ * and the offsets gave none, so there was nothing to search for). A scrubbed
+ * span carries `reason: 'literal-scrub'`. Empty-text spans are surfaced
+ * rather than dropped: a silently vanished span with an `auto-redact` ledger
+ * row is an audit-trail hole.
  *
  * @param {string} text
  * @param {Array<{type: string, text?: string, start: number|null, end: number|null, confidence: number, route: string, disposition: string|null, unlocatable?: boolean}>} decisions
- * @returns {{redactedText: string, replacements: Array<{token: string, start: number, end: number, type: string}>, unresolved: Array<{type: string, token: string, scrubbed: boolean}>}}
+ * @returns {{redactedText: string, replacements: Array<{token: string, start: number, end: number, type: string}>, unresolved: Array<{type: string, token: string, scrubbed: boolean, reason: string}>}}
  */
 export function applyDispositions(text, decisions) {
   const candidates = decisions.filter(shouldRedact);
   // Spans without usable offsets bypass overlap resolution (there is nothing
   // to compare) but are still kept, tokenized, and scrubbed by literal text.
-  const unpositioned = candidates.filter(
-    (span) => !isPositioned(span) && spanTextOf(span, text) !== '',
-  );
-  const kept = [...resolveOverlaps(candidates), ...unpositioned];
+  const unpositioned = candidates.filter((span) => !isPositioned(span, text));
+  const kept = [...resolveOverlaps(candidates, text), ...unpositioned];
   const keptWithTokens = assignTokens(kept, text);
 
   const offsetReplaced = applyOffsetReplacements(text, keptWithTokens);
   const redactedText = scrubRepeats(offsetReplaced, keptWithTokens, text);
 
   const replacements = keptWithTokens
-    .filter(isPositioned)
+    .filter((span) => isPositioned(span, text))
     .sort((a, b) => a.start - b.start)
     .map((span) => ({
       token: span.token,
@@ -231,18 +259,19 @@ export function applyDispositions(text, decisions) {
     }));
 
   const unresolved = keptWithTokens
-    .filter((span) => !isPositioned(span))
+    .filter((span) => !isPositioned(span, text))
     .map((span) => {
       const spanText = spanTextOf(span, text);
-      return {
-        type: span.type,
-        token: span.token,
-        // True only when a literal occurrence actually existed and is now
-        // gone. False means either nothing matched (the reported text never
-        // occurred verbatim — a normalized form may survive) or the text is
-        // too short for the repeat scrub to touch safely.
-        scrubbed: text.includes(spanText) && !redactedText.includes(spanText),
-      };
+      // True only when a literal occurrence actually existed and is now
+      // gone. The length floor no longer causes a false here — an
+      // unpositioned span is always scrubbed regardless of length.
+      const scrubbed =
+        spanText !== '' &&
+        text.includes(spanText) &&
+        !redactedText.includes(spanText);
+      let reason = 'literal-scrub';
+      if (!scrubbed) reason = spanText === '' ? 'no-span-text' : 'no-literal-match';
+      return { type: span.type, token: span.token, scrubbed, reason };
     });
 
   return { redactedText, replacements, unresolved };

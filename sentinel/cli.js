@@ -29,6 +29,22 @@ import {
 const DEFAULT_MODEL_ID = 'fastino/gliner2-privacy-filter-PII-multi';
 const DEFAULT_SALT = 'dev-salt';
 
+// Exit code for a run that completed but could not remove every span it was
+// asked to remove — distinct from 1 (the run failed) so a pipeline can tell
+// "leaked" from "crashed". Fail closed at the process level (ADR 0003).
+const EXIT_UNSCRUBBED = 2;
+
+// Why an unresolved span ended the way it did — keyed by redact.js's
+// `unresolved[].reason`. Never includes the span text, which is the PII.
+const REASON_MESSAGES = {
+  'literal-scrub': 'redacted by literal text match',
+  'no-literal-match':
+    'ITS TEXT DOES NOT OCCUR LITERALLY IN THE TRANSCRIPT; nothing was removed for it',
+  'no-span-text':
+    'THE DETECTOR REPORTED NO TEXT FOR IT and its offsets yield none; nothing was removed for it',
+};
+const UNKNOWN_REASON = 'IT COULD NOT BE RESOLVED; nothing was removed for it';
+
 const USAGE_SCRUB =
   'usage: node sentinel/cli.js scrub <transcripts.jsonl> [--out <dir>=out] [--mock] [--policy <json-file>] [--model <id>]';
 const USAGE_FINETUNE =
@@ -127,7 +143,22 @@ function mockConfidence(id, type, value) {
  */
 function mockDetect({ id, text, planted = [] }) {
   const detections = [];
-  for (const { type, value } of planted) {
+  for (const { type, value, unlocatable } of planted) {
+    // A planted entry may declare itself unlocatable, mirroring the real
+    // detector's contract for a hit whose offsets did not verify. Without it
+    // mock mode can never produce the fail-closed unresolved path, which is
+    // exactly the path ADR 0003 cares about most.
+    if (unlocatable) {
+      detections.push({
+        type,
+        text: value,
+        start: null,
+        end: null,
+        unlocatable: true,
+        confidence: mockConfidence(id, type, value),
+      });
+      continue;
+    }
     let searchFrom = 0;
     let idx;
     while ((idx = text.indexOf(value, searchFrom)) !== -1) {
@@ -164,7 +195,12 @@ function readTranscripts(inputPath) {
   return transcripts;
 }
 
-function printSummary(summary, ledgerRows, verifyResult, { rowsAppended, unresolvedSpans }) {
+function printSummary(
+  summary,
+  ledgerRows,
+  verifyResult,
+  { rowsAppended, unresolvedSpans, leakedSpans },
+) {
   const header = ['type', 'detections', 'auto-redacted', 'consulted', 'allow-observed'];
   console.log('\nSummary (per entity type):');
   console.log(header.join('\t'));
@@ -179,6 +215,7 @@ function printSummary(summary, ledgerRows, verifyResult, { rowsAppended, unresol
   // alone disagrees with the per-run table above. Print both.
   console.log(`\nledger rows: ${ledgerRows.length} (+${rowsAppended} this run)`);
   console.log(`unresolved spans (redacted by literal text only): ${unresolvedSpans}`);
+  console.log(`unresolved spans NOT removed (possible leak): ${leakedSpans}`);
   console.log(
     `ledger verify: ${verifyResult.ok ? 'ok' : `FAILED at row ${verifyResult.badIndex}`}`,
   );
@@ -228,6 +265,7 @@ async function scrub(argv) {
   const summary = {};
   const outputLines = [];
   let unresolvedSpans = 0;
+  let leakedSpans = 0;
 
   for (const transcript of transcripts) {
     const { id, text } = transcript;
@@ -283,11 +321,13 @@ async function scrub(argv) {
       // never the span text, which is the PII.
       for (const u of unresolved) {
         unresolvedSpans++;
+        if (!u.scrubbed) leakedSpans++;
+        // The reason must match the actual cause: an unremoved span is not
+        // always one whose text is missing from the transcript, and an
+        // operator who is told the wrong cause dismisses the warning.
         console.error(
           `warning: ${id}: ${u.type} span had no usable offsets — ` +
-            (u.scrubbed
-              ? 'redacted by literal text match'
-              : 'ITS TEXT DOES NOT OCCUR LITERALLY IN THE TRANSCRIPT; nothing was removed for it'),
+            (REASON_MESSAGES[u.reason] ?? UNKNOWN_REASON),
         );
       }
 
@@ -323,7 +363,18 @@ async function scrub(argv) {
   printSummary(summary, ledgerRows, verifyResult, {
     rowsAppended: ledgerRows.length - rowsBefore,
     unresolvedSpans,
+    leakedSpans,
   });
+
+  // Output and warnings are already written — but a run that left detected
+  // PII in redacted.jsonl must not report success, or a pipeline waves it
+  // through (ADR 0003).
+  if (leakedSpans > 0) {
+    console.error(
+      `error: ${leakedSpans} detected span(s) could not be removed — redacted output may still contain PII`,
+    );
+    process.exitCode = EXIT_UNSCRUBBED;
+  }
 }
 
 /**

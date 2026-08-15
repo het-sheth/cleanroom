@@ -323,3 +323,82 @@ test('exits non-zero on an unrecognized subcommand', async () => {
     },
   );
 });
+
+// ---- F1/F3/F5: unresolved spans must be reported accurately and fail closed
+
+// Both values land above the 0.75 default ceiling under id 't53' (computed,
+// not guessed), so they route auto-redact rather than allow-observed.
+const T53_PIN = '123';
+const T53_EMAIL = 'JANE@EXAMPLE.COM';
+
+test('fail-closed fixture confidences route to auto-redact', () => {
+  assert.ok(mockConfidence('t53', 'pin', T53_PIN) >= DEFAULT_POLICY.ceilings.default);
+  assert.ok(mockConfidence('t53', 'email', T53_EMAIL) >= DEFAULT_POLICY.ceilings.default);
+});
+
+function writeUnlocatableFixture(text, planted) {
+  const dir = tempDir('sentinel-cli-unloc-');
+  const inputPath = path.join(dir, 'transcripts.jsonl');
+  fs.writeFileSync(inputPath, `${JSON.stringify({ id: 't53', text, planted })}\n`);
+  return inputPath;
+}
+
+test('F1/F3: a short unlocatable span is scrubbed and the warning says so, exit 0', async () => {
+  const inputPath = writeUnlocatableFixture('PIN 123 on file.', [
+    { type: 'pin', value: T53_PIN, unlocatable: true },
+  ]);
+  const outDir = tempDir('sentinel-cli-out-');
+
+  const { stdout, stderr } = await runCli(['scrub', inputPath, '--out', outDir, '--mock']);
+
+  const line = JSON.parse(fs.readFileSync(path.join(outDir, 'redacted.jsonl'), 'utf8').trim());
+  assert.equal(
+    line.redacted_text.includes(T53_PIN),
+    false,
+    'a sub-4-char unlocatable span must not survive into redacted_text',
+  );
+  assert.equal(line.redacted_text, 'PIN [PIN_1] on file.');
+  assert.match(stderr, /pin span had no usable offsets — redacted by literal text match/);
+  assert.equal(
+    /DOES NOT OCCUR LITERALLY/.test(stderr),
+    false,
+    'the span text does occur literally — that reason would be factually wrong',
+  );
+  assert.match(stdout, /unresolved spans NOT removed \(possible leak\): 0/);
+});
+
+test('F3/F5: a span that could not be removed warns with the right cause, still writes output, and exits non-zero', async () => {
+  const inputPath = writeUnlocatableFixture('Contact jane@example.com for details.', [
+    { type: 'email', value: T53_EMAIL, unlocatable: true },
+  ]);
+  const outDir = tempDir('sentinel-cli-out-');
+
+  await assert.rejects(
+    () => runCli(['scrub', inputPath, '--out', outDir, '--mock']),
+    (err) => {
+      assert.notEqual(err.code, 0, 'a leaking run must not report success (ADR 0003)');
+      assert.match(err.stderr, /email span had no usable offsets — ITS TEXT DOES NOT OCCUR LITERALLY/);
+      assert.match(err.stderr, /could not be removed/);
+      // The span text is the PII — it must never reach the console.
+      assert.equal(err.stderr.includes(T53_EMAIL), false, 'must not print the span text');
+      assert.match(err.stdout, /unresolved spans NOT removed \(possible leak\): 1/);
+      return true;
+    },
+  );
+
+  // Output and the ledger are still written before the non-zero exit.
+  const line = JSON.parse(fs.readFileSync(path.join(outDir, 'redacted.jsonl'), 'utf8').trim());
+  assert.equal(line.id, 't53');
+  const rows = new Ledger(path.join(outDir, 'ledger.jsonl')).rows();
+  assert.equal(rows.length, 1);
+  assert.deepEqual(Ledger.verify(rows), { ok: true });
+});
+
+test('F5: the clean demo path still exits 0 and reports no leaks', async () => {
+  const { inputPath } = buildFixture();
+  const outDir = tempDir('sentinel-cli-out-');
+
+  const { stdout } = await runCli(['scrub', inputPath, '--out', outDir, '--mock']);
+  assert.match(stdout, /unresolved spans \(redacted by literal text only\): 0/);
+  assert.match(stdout, /unresolved spans NOT removed \(possible leak\): 0/);
+});
