@@ -10,3 +10,6 @@ agent_config.yaml
 .claude/
 supabase/.temp/
 .venv-band/
+out/
+demo/out/
+demo/live.jsonl
