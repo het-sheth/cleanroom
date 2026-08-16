@@ -1,0 +1,21 @@
+# Copy to agent_config.yaml (gitignored) and fill in. Never commit the real file.
+#
+# Get the values: app.band.ai -> Agents -> "Connect Remote Agent" (NOT "New Agent").
+#   api_key   -> shown ONCE in the popup right after creating the agent
+#   agent_id  -> the UUID on that agent's Settings page
+#
+# Create both agents, then Chats -> new room "cleanroom-consults" -> participants
+# panel -> add both. Band routes by @mention, so the handles matter: use
+# handle "specialist" and handle "exporter".
+#
+# Read in code with: band.config.load_agent_config("specialist")
+# The top-level keys ARE the lookup keys — don't rename them, and don't add
+# other top-level keys to this file.
+
+specialist:
+  agent_id: ""
+  api_key: ""
+
+exporter:
+  agent_id: ""
+  api_key: ""

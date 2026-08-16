@@ -8,9 +8,31 @@ timestamp: 2026-08-15T20:00:00Z
 Source: docs.pioneer.ai + github.com/fastino-ai/GLiNER2, researched via subagent on hackathon day;
 booth intel from Het's on-site conversation.
 
-## Inference
+## Inference — VERIFIED LIVE 2026-08-15 (real call, real key)
 - `POST https://api.pioneer.ai/inference`, header `X-API-Key: <key>` (key shown once at creation).
-- Body: `{"model_id": "fastino/gliner2-privacy-filter-PII-multi", "text": "...", "threshold": 0.5}`.
+- **LIVE VERIFIED 2026-08-15T22:30Z — the 403 `card_required` is GONE; inference returns 200.**
+  Working call, copy-paste:
+  ```
+  curl -X POST https://api.pioneer.ai/inference \
+    -H "X-API-Key: $PIONEER_API_KEY" -H "content-type: application/json" \
+    -d '{"model_id":"fastino/gliner2-privacy-filter-PII-multi","text":"...","threshold":0.5,
+         "schema":{"entities":["person","email","phone"]}}'
+  ```
+  Real response: `Jane Doe` person @ 0.996 (start 8, end 16), `jane@example.com` email @ 1.0
+  (start 20, end 36), `phone: []` — it MISSED `555-0142`. Latency 480ms, 86 tokens.
+  That miss is a genuine, quotable data point for the pitch: detection is the weak link, which is
+  exactly why nothing depends on it alone.
+- Body (verified): `{"model_id": "fastino/gliner2-privacy-filter-PII-multi", "text": "...",
+  "schema": {"entities": ["person", "email", ...]}, "threshold": 0.5}` — **`schema` is REQUIRED**
+  (422 `encoder.schema must be provided` without it; the `encoder.` prefix in errors is internal
+  naming — the payload itself stays FLAT, never nested).
+- Response (verified): `{"type": "encoder", "inference_id": "...", "result": {"data": {"entities":
+  {"person": [{"text", "confidence", "start", "end"}], "email": [...]}}}}` — entities grouped
+  **by type as a dict**, offsets + confidence per hit. Task 3's normalizer and Track B's script
+  must flatten this shape.
+- Cold start is real: first calls return 403→422→"timed out waiting for provider capacity";
+  retry ~25s apart, warms in ≤1 min. Billing needs Pro plan AND a card on file (free credit alone
+  → 403 card_required).
 - Schema is dynamic at inference: pass entity subset, or a `{type: description}` dict — natural-
   language descriptions improve precision. Per-entity thresholds supported. 42 PII types, 7 groups,
   7 languages. This is the no-training tuning lever (see [[contracts/policy-table]]).

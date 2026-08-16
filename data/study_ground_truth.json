@@ -1,0 +1,165 @@
+{
+  "t25": {
+    "planted": 7,
+    "detected": 12,
+    "difficulty": "hard",
+    "planted_values": [
+      "Sofia Marchetti-Lund",
+      "s.marchetti@lumenpay.co",
+      "(503) 555-0166",
+      "601-22-9048",
+      "5555555555554444",
+      "110000000",
+      "000456789012"
+    ]
+  },
+  "t12": {
+    "planted": 6,
+    "detected": 12,
+    "difficulty": "hard",
+    "planted_values": [
+      "523 04 1187",
+      "441-88-2093",
+      "661.02.4419",
+      "702881934",
+      "318-55-0027",
+      "449-01-7732"
+    ]
+  },
+  "t13": {
+    "planted": 3,
+    "detected": 4,
+    "difficulty": "hard",
+    "planted_values": [
+      "five two three, zero four, one one eight seven",
+      "One one eight seven",
+      "four two four two"
+    ]
+  },
+  "t14": {
+    "planted": 5,
+    "detected": 10,
+    "difficulty": "hard",
+    "planted_values": [
+      "+44 20 7946 0958",
+      "+91 98765 43210",
+      "+49 151 5550 1234",
+      "+81 3-5555-0177",
+      "+55 11 95555-0182"
+    ]
+  },
+  "t18": {
+    "planted": 3,
+    "detected": 6,
+    "difficulty": "hard",
+    "planted_values": [
+      "4111-1111-1111-1111",
+      "4111111111111111",
+      "5555 5555 5555 en"
+    ]
+  },
+  "t11": {
+    "planted": 3,
+    "detected": 9,
+    "difficulty": "hard",
+    "planted_values": [
+      "Ezekiel Mbeki",
+      "Ezekial Mbeki",
+      "Ezekiel Mbeke"
+    ]
+  },
+  "t15": {
+    "planted": 6,
+    "detected": 6,
+    "difficulty": "hard",
+    "planted_values": [
+      "Ingrid",
+      "Halvorsen",
+      "ihalvorsen@northgatehealth.org",
+      "770-19-4462",
+      "+47 21 555 019",
+      "Bispegata 14C"
+    ]
+  },
+  "t16": {
+    "planted": 2,
+    "detected": 7,
+    "difficulty": "hard",
+    "planted_values": [
+      "t-bergqvist",
+      "@rmoyer-dev"
+    ]
+  },
+  "t17": {
+    "planted": 3,
+    "detected": 4,
+    "difficulty": "hard",
+    "planted_values": [
+      "VP of Regulatory Affairs",
+      "Northgate Health Systems",
+      "Sacramento office"
+    ]
+  },
+  "t24": {
+    "planted": 12,
+    "detected": 12,
+    "difficulty": "hard",
+    "planted_values": [
+      "Marguerite Okonkwo-Reyes",
+      "03.07.1984",
+      "Flat 2, 19 Ashgrove Terrace, Leeds LS6 3QB",
+      "110000000",
+      "000987654321",
+      "m.okonkwo",
+      "Tomas Bergqvist",
+      "14/03/1987",
+      "1847 Kestrel Lane Apt 3B, Modesto, CA 95350",
+      "021000021",
+      "000123456789",
+      "t-bergqvist"
+    ]
+  },
+  "t19": {
+    "planted": 0,
+    "detected": 0,
+    "difficulty": "hard",
+    "planted_values": []
+  },
+  "t21": {
+    "planted": 0,
+    "detected": 0,
+    "difficulty": "hard",
+    "planted_values": []
+  },
+  "t06": {
+    "planted": 4,
+    "detected": 8,
+    "difficulty": "medium",
+    "planted_values": [
+      "Devon Whitlock",
+      "4242 4242 4242 4242",
+      "110000000",
+      "000123456789"
+    ]
+  },
+  "t04": {
+    "planted": 3,
+    "detected": 6,
+    "difficulty": "easy",
+    "planted_values": [
+      "Aisha Nkemdirim",
+      "1992-11-08",
+      "(628) 555-0119"
+    ]
+  },
+  "t01": {
+    "planted": 3,
+    "detected": 6,
+    "difficulty": "easy",
+    "planted_values": [
+      "Marcus Delgado",
+      "marcus.delgado@tidebreak.io",
+      "523-04-1187"
+    ]
+  }
+}
