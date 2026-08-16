@@ -190,7 +190,7 @@
   <!-- 2 — the problem: transcripts quote secrets verbatim -->
   <section class="slide" data-n="2">
     <div class="kicker anim d1">The leak surface</div>
-    <h2 class="heading anim d2">Transcripts quote your secrets <span class="hl">verbatim</span>.</h2>
+    <h2 class="heading anim d2">Your transcript just <span class="hl">snitched</span> on you.</h2>
     <div class="twocol">
       <div class="col leaves anim d3">
         <h3>The session</h3>
@@ -218,7 +218,7 @@
       <div class="archarrow anim d4">→</div>
       <div class="archbox gate anim d5">redact<small>unsure → redact anyway</small></div>
       <div class="archarrow anim d5">→</div>
-      <div class="archbox human anim d6">ledger + verify<small>every span audited</small></div>
+      <div class="archbox human anim d6">hash-chain ledger<small>tamper-evident · Supabase</small></div>
     </div>
     <div class="accentline anim d7">0 unresolved spans — or the run fails</div>
   </section>
@@ -226,11 +226,13 @@
   <!-- 4 — LIVE DEMO -->
   <section class="slide dark" data-n="4">
     <div class="kicker anim d1">Live demo</div>
-    <h2 class="heading anim d2">One command. <span class="hl">Live</span>.</h2>
+    <h2 class="heading anim d2">Type PII in Claude Code — <span class="hl">watch it get caught</span>.</h2>
     <div class="chipcol">
-      <div class="chip anim d3"><code>demo/run_demo.sh</code> <small>— live GLiNER, no mocks</small></div>
+      <div class="chip anim d3">1 &nbsp;Claude Code quotes the planted secrets</div>
+      <div class="chip anim d4">2 &nbsp;<code>demo/run_demo.sh</code> <small>— live GLiNER on Pioneer</small></div>
+      <div class="chip anim d5">3 &nbsp;<code>localhost:4600</code> <small>— detections light up 2s later</small></div>
     </div>
-    <div class="accentline anim d4">SSN → [SSN_1] · phone → [PHONE_1]</div>
+    <div class="accentline anim d6">then hit "simulate tamper" — the hash chain catches that too</div>
     <div class="footer-note">Pre-staged terminal · everything else closed</div>
   </section>
 
@@ -246,8 +248,20 @@
     </div>
   </section>
 
-  <!-- 6 — the honest gap is the roadmap -->
+  <!-- 6 — sponsor stack -->
   <section class="slide" data-n="6">
+    <div class="kicker anim d1">The stack</div>
+    <h2 class="heading anim d2">Four sponsors, <span class="hl">all wired live</span>.</h2>
+    <div class="momentcol">
+      <div class="moment anim d3"><span class="date">Pioneer</span><span>GLiNER detection on every span — plus the fine-tune job, wired end-to-end<span class="src">api.pioneer.ai/generate → felix/training-jobs</span></span></div>
+      <div class="moment anim d4"><span class="date">Supabase</span><span>hash-chained decision ledger — tamper-evident by schema<span class="src">sha256 prev_hash → row_hash · "simulate tamper" proves it</span></span></div>
+      <div class="moment anim d5"><span class="date">Terac</span><span>human label study — 63 raters recruited to confirm the hard cases<span class="src">the 20-label gate stays honest</span></span></div>
+      <div class="moment anim d6"><span class="date">Band</span><span>specialist consult for ambiguous spans — fail-closed on timeout<span class="src">unsure → redact, never allow</span></span></div>
+    </div>
+  </section>
+
+  <!-- 7 — the honest gap is the roadmap -->
+  <section class="slide" data-n="7">
     <div class="kicker anim d1">The blind spot</div>
     <h2 class="heading anim d2">The blind spot <span class="hl">is the roadmap</span>.</h2>
     <div class="twocol">
@@ -265,8 +279,8 @@
     </div>
   </section>
 
-  <!-- 7 — the ask (dark close, callback) -->
-  <section class="slide dark" data-n="7">
+  <!-- 8 — the ask (dark close, callback) -->
+  <section class="slide dark" data-n="8">
     <div class="kicker anim d1">The ask</div>
     <h2 class="heading anim d2">Scrub the transcript <span class="hl">before it becomes the leak</span>.</h2>
     <div class="chipcol">

@@ -25,6 +25,8 @@ echo "=== AFTER — redacted transcript ==="
 python3 -c "import json;[print(json.loads(l)['redacted_text']) for l in open('demo/out/redacted.jsonl')]"
 
 echo
+echo ">>> dashboard: node dashboard/server.js --dir demo/out   → http://localhost:4600 (updates within 2s)"
+echo
 echo "=== SURVIVOR CHECK (silence = clean) ==="
 python3 <<'EOF'
 import json
