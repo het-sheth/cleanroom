@@ -445,6 +445,36 @@ test('applyDispositions does not mutate the caller-supplied decision objects', (
   assert.equal('token' in original, false);
 });
 
+// ---- placeholders: the mapping a caller needs to record a redaction
+// without ever handling the span text ------------------------------------
+
+test('placeholders line up with the decisions, null where nothing was replaced', () => {
+  const text = 'SSN 123-45-6789, phone 555-0100, and Dana again: 123-45-6789.';
+  const ssnStart = text.indexOf('123-45-6789');
+  const phoneStart = text.indexOf('555-0100');
+  const decisions = [
+    decision({ type: 'ssn', start: ssnStart, end: ssnStart + 11, text: '123-45-6789' }),
+    // allow-observed: exported on purpose, so it has no placeholder.
+    decision({ type: 'phone', start: phoneStart, end: phoneStart + 8, route: 'allow-observed' }),
+    // second occurrence of the same span: shares the first one's token.
+    decision({ type: 'ssn', start: text.lastIndexOf('123-45-6789'), end: text.length - 1, text: '123-45-6789' }),
+  ];
+
+  const { placeholders, redactedText } = applyDispositions(text, decisions);
+
+  assert.deepEqual(placeholders, ['[SSN_1]', null, '[SSN_1]']);
+  assert.equal(placeholders.length, decisions.length);
+  assert.equal(redactedText.includes('123-45-6789'), false);
+});
+
+test('an unpositioned span still reports its placeholder', () => {
+  const text = 'PIN 123 on file.';
+  const decisions = [decision({ type: 'pin', start: null, end: null, unlocatable: true, text: '123' })];
+
+  const { placeholders } = applyDispositions(text, decisions);
+  assert.deepEqual(placeholders, ['[PIN_1]']);
+});
+
 test('token normalization uppercases the type and replaces non-alphanumerics with underscore', () => {
   const text = 'title: senior engineer';
   const start = text.indexOf('senior engineer');

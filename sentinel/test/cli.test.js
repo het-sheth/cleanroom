@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Ledger, PAYLOAD_KEYS } from '../lib/ledger.js';
+import { Ledger, PAYLOAD_KEYS, spanHmac } from '../lib/ledger.js';
 import { DEFAULT_POLICY } from '../lib/policy.js';
 
 const execFileAsync = promisify(execFile);
@@ -86,9 +86,11 @@ function buildFixture() {
   return { dir, inputPath };
 }
 
+const FIXTURE_SALT = 'test-salt-fixture';
+
 function runCli(args, opts = {}) {
   return execFileAsync(process.execPath, [CLI_PATH, ...args], {
-    env: { ...process.env, PIONEER_API_KEY: '', CLEANROOM_SALT: 'test-salt-fixture', ...opts.env },
+    env: { ...process.env, PIONEER_API_KEY: '', CLEANROOM_SALT: FIXTURE_SALT, ...opts.env },
     ...opts,
   });
 }
@@ -124,11 +126,19 @@ test('scrub over the 3-transcript mock fixture produces correct redacted output 
   );
   assert.equal(byId.t24.redacted_text.includes(T24_ADDRESS), true);
   assert.equal(byId.t24.detections.length, 3);
+  // Detections are keyed by the salted span hash, not the raw span — the
+  // span text never reaches this file (see the trust-boundary test below).
   const t24Confidences = Object.fromEntries(
-    byId.t24.detections.map((d) => [`${d.type}:${d.text}`, d.confidence]),
+    byId.t24.detections.map((d) => [`${d.type}:${d.span_hmac}`, d.confidence]),
   );
-  assert.equal(t24Confidences[`ssn:${T24_SSN}`], CONF_T24_SSN);
-  assert.equal(t24Confidences[`address:${T24_ADDRESS}`], CONF_T24_ADDRESS);
+  assert.equal(
+    t24Confidences[`ssn:${spanHmac(FIXTURE_SALT, T24_SSN)}`],
+    CONF_T24_SSN,
+  );
+  assert.equal(
+    t24Confidences[`address:${spanHmac(FIXTURE_SALT, T24_ADDRESS)}`],
+    CONF_T24_ADDRESS,
+  );
 
   // t15: below-floor phone, allow-observed -> text untouched.
   assert.equal(
@@ -188,6 +198,119 @@ test('scrub over the 3-transcript mock fixture produces correct redacted output 
     assert.equal(r.route, 'consult');
     assert.equal(r.disposition, 'timeout');
   }
+});
+
+// ---- trust boundary: redacted.jsonl carries no raw span text -------------
+
+// Every field a persisted detection is allowed to carry. A whitelist, not a
+// blacklist: a new detector field must be added here deliberately, after
+// someone has decided it is not PII (ADR 0003, fail closed).
+const DETECTION_FIELDS = [
+  'confidence',
+  'disposition',
+  'end',
+  'route',
+  'span_hmac',
+  'start',
+  'token',
+  'type',
+];
+
+test('scrub writes no raw span text into redacted.jsonl — only a salted hash', async () => {
+  const { inputPath } = buildFixture();
+  const outDir = tempDir('sentinel-cli-out-');
+
+  await runCli(['scrub', inputPath, '--out', outDir, '--mock']);
+
+  const raw = fs.readFileSync(path.join(outDir, 'redacted.jsonl'), 'utf8');
+
+  // Redacted spans are gone from the file outright.
+  assert.equal(raw.includes(T24_SSN), false, 'raw ssn span leaked into redacted.jsonl');
+  assert.equal(
+    raw.includes(T16_USERNAME),
+    false,
+    'raw username span leaked into redacted.jsonl',
+  );
+  assert.equal(
+    /"text"\s*:/.test(raw),
+    false,
+    'a detections[].text field leaked into redacted.jsonl',
+  );
+
+  // allow-observed spans survive in redacted_text on purpose (the observed-
+  // not-acted wedge) — but never as a detection field.
+  const plantedValues = [T24_SSN, T24_ADDRESS, T15_PHONE, T16_USERNAME];
+  for (const line of raw.trim().split('\n')) {
+    const record = JSON.parse(line);
+    for (const detection of record.detections) {
+      const serialized = JSON.stringify(detection);
+      for (const value of plantedValues) {
+        assert.equal(
+          serialized.includes(value),
+          false,
+          `raw span leaked into a detection of ${record.id}`,
+        );
+      }
+      assert.deepEqual(Object.keys(detection).sort(), DETECTION_FIELDS);
+    }
+  }
+
+  // What the file still needs: the placeholder mapping, the routing metadata,
+  // and a span hash that ties each detection to its ledger row.
+  const byId = Object.fromEntries(
+    raw.trim().split('\n').map((l) => JSON.parse(l)).map((r) => [r.id, r]),
+  );
+
+  const ssnDetections = byId.t24.detections.filter((d) => d.type === 'ssn');
+  assert.equal(ssnDetections.length, 2);
+  for (const d of ssnDetections) {
+    assert.equal(d.token, '[SSN_1]', 'the placeholder mapping must survive');
+    assert.equal(d.route, 'auto-redact');
+    assert.equal(d.disposition, null);
+    assert.equal(d.span_hmac, spanHmac(FIXTURE_SALT, T24_SSN));
+  }
+
+  // Nothing was replaced for an allow-observed span, so it has no placeholder.
+  const addressDetection = byId.t24.detections.find((d) => d.type === 'address');
+  assert.equal(addressDetection.token, null);
+  assert.equal(addressDetection.route, 'allow-observed');
+  assert.equal(addressDetection.span_hmac, spanHmac(FIXTURE_SALT, T24_ADDRESS));
+
+  const [usernameDetection] = byId.t16.detections;
+  assert.equal(usernameDetection.token, '[USERNAME_1]');
+  assert.equal(usernameDetection.route, 'consult');
+  assert.equal(usernameDetection.disposition, 'timeout');
+
+  // The hash is the join key between redacted.jsonl and the ledger, so a
+  // dispute can be settled with the salt and neither file holding the span.
+  const rows = new Ledger(path.join(outDir, 'ledger.jsonl')).rows();
+  const ledgerHmacs = new Set(rows.map((r) => r.span_hmac));
+  for (const record of Object.values(byId)) {
+    for (const d of record.detections) {
+      assert.match(d.span_hmac, /^[0-9a-f]{64}$/);
+      assert.ok(ledgerHmacs.has(d.span_hmac), 'detection hash must match its ledger row');
+    }
+  }
+  assert.deepEqual(Ledger.verify(rows), { ok: true });
+});
+
+test('an unlocatable span is persisted with null offsets and no text', async () => {
+  const inputPath = writeUnlocatableFixture('PIN 123 on file.', [
+    { type: 'pin', value: T53_PIN, unlocatable: true },
+  ]);
+  const outDir = tempDir('sentinel-cli-out-');
+
+  await runCli(['scrub', inputPath, '--out', outDir, '--mock']);
+
+  const raw = fs.readFileSync(path.join(outDir, 'redacted.jsonl'), 'utf8');
+  const [detection] = JSON.parse(raw.trim()).detections;
+  assert.deepEqual(Object.keys(detection).sort(), DETECTION_FIELDS);
+  assert.equal(detection.start, null);
+  assert.equal(detection.end, null);
+  // `unlocatable: true` must not travel either — it is not on the whitelist.
+  assert.equal(raw.includes('unlocatable'), false);
+  assert.equal(detection.token, '[PIN_1]');
+  assert.equal(detection.span_hmac, spanHmac(FIXTURE_SALT, T53_PIN));
 });
 
 test('auto-selects mock mode and warns when PIONEER_API_KEY is unset, without --mock', async () => {

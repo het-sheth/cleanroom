@@ -2,7 +2,7 @@
 type: concept
 title: Track A/B integration risks
 description: Contract conflict and two measured findings, raised against the sentinel-core plan
-timestamp: 2026-08-15T21:55:00Z
+timestamp: 2026-08-15T23:40:00Z
 ---
 
 Raised by Track B after reading `docs/superpowers/plans/2026-08-15-sentinel-core.md`. Track A's
@@ -83,3 +83,20 @@ Entity-type vocabulary lines up: all four of the plan's `contextual_types`
 (`username`, `organization`, `location`, `job_title`) occur as planted types in
 [[contracts/transcripts-jsonl]]. Whether *Pioneer* emits those same type strings is unverified
 until a live call is made.
+
+## 4. Sentinel's `out/redacted.jsonl` no longer carries `detections[].text` — Track A, FYI
+
+Raised and fixed by Track A (2026-08-15). `node sentinel/cli.js scrub` was writing the raw
+detected span into `detections[].text` of `<out>/redacted.jsonl`, so every planted SSN, key and
+phone number sat verbatim in the file next to its `[SSN_1]` placeholder — `grep 523-04-1187
+out/redacted.jsonl` hit. Same class of bug the dashboard fixed at its HTTP boundary (`15c9b7a`).
+
+Sentinel now writes the metadata form only: `{type, start, end, confidence, route, disposition,
+token, span_hmac}`, `token` being the placeholder that replaced the span. Scoring joins on
+`span_hmac` — HMAC the planted value with the same `CLEANROOM_SALT` and match, the HMAC-confirm
+property from `CONTEXT.md`. No raw span is needed for the BEFORE/AFTER numbers.
+
+**Not a change to [[../contracts/redacted-baseline]]**: that contract governs Track B's
+`data/redacted_baseline.jsonl`, which is untouched and still emits `detections[].text`. Only
+Track A's `<out>/redacted.jsonl` changed shape. **Track B: if you would rather both files match,
+say so here** — Track A will not edit the contract unilaterally.

@@ -295,13 +295,16 @@ async function scrub(argv) {
         // timeout, which redact.js's fail-closed rule (ADR 0003) turns into a
         // redaction rather than a silent allow.
         const disposition = decidedRoute === 'consult' ? 'timeout' : null;
-        return { ...d, route: decidedRoute, disposition };
+        // Hash the span once, here: it is the only form of the span text that
+        // is allowed to be written anywhere (ledger row and redacted.jsonl
+        // alike), and computing it in one place keeps the two joinable.
+        return { ...d, route: decidedRoute, disposition, spanHmacHex: spanHmac(salt, d.text) };
       });
 
       for (const d of decisions) {
         ledger.append({
           trace_id: id,
-          span_hmac: spanHmac(salt, d.text),
+          span_hmac: d.spanHmacHex,
           entity_type: d.type,
           confidence: d.confidence,
           route: d.route,
@@ -325,7 +328,7 @@ async function scrub(argv) {
         else if (d.route === 'allow-observed') s.allowObserved++;
       }
 
-      const { redactedText, unresolved } = applyDispositions(text, decisions);
+      const { redactedText, unresolved, placeholders } = applyDispositions(text, decisions);
 
       // A span the detector could not locate was redacted by literal text
       // only; the ledger row still reads `auto-redact`, so say so here rather
@@ -347,17 +350,26 @@ async function scrub(argv) {
         JSON.stringify({
           id,
           redacted_text: redactedText,
-          // NOTE: `detections[].text` is the raw PII span, on purpose — this
-          // file is the eval artifact scored against transcripts.jsonl ground
-          // truth (context/contracts/redacted-baseline.md binds this shape).
-          // It is NOT the redacted export that crosses the trust boundary;
-          // only `redacted_text` is safe to hand onward.
-          detections: decisions.map((d) => ({
+          // TRUST BOUNDARY. A Detection is the *metadata* form of PII
+          // (CONTEXT.md): entity type, confidence, offsets, and the salted
+          // span hash — never the span text. This used to carry
+          // `detections[].text` verbatim, which put every detected secret
+          // back into the file whose whole purpose is not to have them.
+          //
+          // Scoring a run against transcripts.jsonl ground truth still works:
+          // hash the planted value with the same CLEANROOM_SALT and match on
+          // `span_hmac`, the same join key the ledger uses (HMAC-confirm).
+          // Whitelist, not blacklist — a new detector field is only persisted
+          // once someone has decided it is not PII (ADR 0003, fail closed).
+          detections: decisions.map((d, i) => ({
             type: d.type,
-            text: d.text,
-            start: d.start,
-            end: d.end,
+            start: d.start ?? null,
+            end: d.end ?? null,
             confidence: d.confidence,
+            route: d.route,
+            disposition: d.disposition,
+            token: placeholders[i],
+            span_hmac: d.spanHmacHex,
           })),
         }),
       );

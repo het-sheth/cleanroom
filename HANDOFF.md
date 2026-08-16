@@ -91,8 +91,9 @@ still needs a scoped re-review. Full detail in the SDD ledger and the fix report
   offsets leave a PII fragment); malformed detector output aborts mid-file leaving a half-written
   ledger; re-running `scrub` into the same `--out` appends the ledger but truncates
   `redacted.jsonl` so the printed counts disagree; `out/redacted.jsonl` carries raw PII in
-  `detections[].text` (correct per the frozen contract, but needs a README caveat — it is an eval
-  artifact, not the export).
+  `detections[].text` (**now fixed** — `scrub` writes the metadata form only, with `span_hmac` in
+  place of the span; scoring joins on the hash. Track B's `data/redacted_baseline.jsonl` still
+  follows the frozen contract and is unchanged).
 - **Not a code fix, but a demo hazard:** in MOCK mode, 11 planted values survive verbatim in
   `redacted_text` — including an SSN, an MRN, an email and a bank account — because mock
   "confidence" is a sha256 of the string, not real uncertainty. A judge who greps the output finds
