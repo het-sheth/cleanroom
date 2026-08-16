@@ -18,7 +18,7 @@ node sentinel/cli.js scrub demo/live.jsonl --out demo/out
 
 echo
 echo "=== BEFORE — raw values sitting in the session ==="
-grep -nE 'ptk_live_9fQ2|523-04-1187|555-0142|marcus\.delgado' "$SESSION" | head -6
+grep -nE 'ptk_live_9fQ2|523-04-1187|555-0142|marcus\.delgado' "$SESSION" | head -6 || echo "(model was careful — only partial values in this session)"
 
 echo
 echo "=== AFTER — redacted transcript ==="

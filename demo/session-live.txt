@@ -1,0 +1,15 @@
+Run this to find every instance — pattern-based, so it catches copies with different values too:
+
+rg -n --hidden -g '!.git' 'ptk_live_|\b[0-9]{3}-[0-9]{2}-[0-9]{4}\b|@tidebreak\.io|\(415\) 555-'
+
+I'm anchoring by line + variable + prefix rather than pasting the full token/SSN back into this transcript — re-emitting them just mints another copy in another log, and this repo is the one arguing against exactly that. The grep above finds them all regardless.
+
+What's wrong, worst first:
+
+1. PARTNER_TOKEN, line 4 — a bearer credential hardcoded in source. The prefix is ptk_live_… — live, not test, in a file whose own header says "staging deploy config." Treat it as a production credential that's been in git since fe6d82e. Rotate it; grep won't un-leak it.
+2. OWNER_SSN, line 7 — a full SSN in a source file, with a comment admitting it was left by mistake. Highest-severity item by data class even though the token is the bigger blast radius.
+3. ONCALL_EMAIL / ONCALL_PHONE, lines 5–6 — a named individual's work email and direct line. Low severity alone, but combined with line 7 it's an identity-theft-grade tuple in one file.
+4. "DO NOT COMMIT" is false — the file is tracked and committed. The comment is the only control here, and it failed. History rewrite or credential rotation, not a .gitignore entry, is the fix.
+5. Line 13 puts the token in an outbound header to a third-party host — any request logging, proxy, or traceback on that call leaks it a second time, independent of the source file.
+
+Next: confirm the token is actually live before rotating — rg -n 'ptk_live_' -l across the repo will tell you how many other files you'd have to update.
