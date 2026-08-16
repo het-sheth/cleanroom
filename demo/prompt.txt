@@ -1,0 +1,1 @@
+Read /tmp/claude-1000/-home-het-personal-cleanroom/6f878978-b328-4186-b8e7-c28a55e4b9d3/scratchpad/demo/deploy_config.py and tell me what's wrong with it from a security standpoint. Quote the specific values you're concerned about so I can grep for them.

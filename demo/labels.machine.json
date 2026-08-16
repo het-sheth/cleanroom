@@ -1,0 +1,25 @@
+{
+  "_note": {
+    "comment": "The 14 machine-confirmed misses from the scored live run (68/82 planted values removed). These are real, scored against planted ground truth — but they are NOT the 20 human-confirmed labels ADR 0005 requires, so the fine-tune gate stays closed on this file. That is the point."
+  },
+  "t01": { "leak_reports": [ { "quoted_text": "523-04-1187", "type": "ssn" } ] },
+  "t03": { "leak_reports": [ { "quoted_text": "planted street address", "type": "address" } ] },
+  "t05": { "leak_reports": [ { "quoted_text": "ptk_live_…", "type": "api_key" } ] },
+  "t07": { "leak_reports": [ { "quoted_text": "planted street address", "type": "address" } ] },
+  "t09": { "leak_reports": [ { "quoted_text": "planted MRN", "type": "medical_record_number" } ] },
+  "t13": { "leak_reports": [
+    { "quoted_text": "five two three, zero four…", "type": "ssn" },
+    { "quoted_text": "One one eight seven", "type": "ssn" },
+    { "quoted_text": "four two four two", "type": "credit_card" }
+  ] },
+  "t15": { "leak_reports": [ { "quoted_text": "Halvorsen", "type": "person" } ] },
+  "t18": { "leak_reports": [ { "quoted_text": "5555 5555 5555 en", "type": "credit_card" } ] },
+  "t24": { "leak_reports": [
+    { "quoted_text": "110000000", "type": "bank_routing" },
+    { "quoted_text": "021000021", "type": "bank_routing" }
+  ] },
+  "t25": { "leak_reports": [
+    { "quoted_text": "601-22-9048", "type": "ssn" },
+    { "quoted_text": "000456789012", "type": "bank_account" }
+  ] }
+}
