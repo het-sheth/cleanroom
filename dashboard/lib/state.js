@@ -1,11 +1,11 @@
 // Builds the /api/state payload from the scrub output directory.
 //
-// TRUST BOUNDARY. redacted.jsonl carries `detections[].text` — the raw PII span, verbatim —
-// so a run can be scored against transcripts.jsonl ground truth (sentinel/README.md). That
-// field must never cross the HTTP boundary. Records are projected onto an explicit field
-// whitelist here, at the boundary, so pointing the server at a real output directory cannot
-// leak PII regardless of deploy config. Ledger rows carry span_hmac, not spans, and pass
-// through untouched so the browser can verify the hash chain byte-for-byte.
+// TRUST BOUNDARY. `sentinel scrub` no longer writes `detections[].text` (the raw PII span) —
+// but Track B's baseline output and the shipped fixtures still carry it, and a stale run's
+// redacted.jsonl may too. That field must never cross the HTTP boundary. Records are projected
+// onto an explicit field whitelist here, at the boundary, so pointing the server at any output
+// directory cannot leak PII regardless of what wrote it. Ledger rows carry span_hmac, not
+// spans, and pass through untouched so the browser can verify the hash chain byte-for-byte.
 //
 // Reads are memoised on (mtime, size) of both files: a demo run that appends to either shows
 // up on the next 2s poll, but idle polls do not re-read and re-hash the whole chain.

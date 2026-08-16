@@ -130,9 +130,12 @@ function typeToken(type) {
  *
  * @param {object[]} keptSpans - kept spans, will be read in start order
  * @param {string} text - original transcript, for text.slice(start, end)
+ * @param {Map<object, string>} tokenBySpan - filled in with each input span's
+ *   token, so a caller can report which placeholder replaced which decision
+ *   without re-deriving the numbering (or handling the span text again).
  * @returns {object[]} keptSpans with a `token` field added
  */
-function assignTokens(keptSpans, text) {
+function assignTokens(keptSpans, text, tokenBySpan = new Map()) {
   const ordered = [
     ...keptSpans
       .filter((span) => isPositioned(span, text))
@@ -152,6 +155,7 @@ function assignTokens(keptSpans, text) {
     }
     // Copy rather than mutate — decisions are caller-owned (e.g. the
     // ledger may log them next) and must not gain a `token` field.
+    tokenBySpan.set(span, tokenByKey.get(key));
     return { ...span, token: tokenByKey.get(key) };
   });
 }
@@ -233,9 +237,15 @@ function scrubRepeats(redactedText, keptSpansWithTokens, originalText) {
  * rather than dropped: a silently vanished span with an `auto-redact` ledger
  * row is an audit-trail hole.
  *
+ * `placeholders` is aligned index-for-index with `decisions`: the placeholder
+ * token that replaced that decision's span, or `null` if nothing replaced it
+ * (an allowed span, or one dropped as a duplicate by overlap resolution). It
+ * lets a caller record the placeholder mapping without ever handling the span
+ * text itself — which is what keeps raw PII out of persisted output.
+ *
  * @param {string} text
  * @param {Array<{type: string, text?: string, start: number|null, end: number|null, confidence: number, route: string, disposition: string|null, unlocatable?: boolean}>} decisions
- * @returns {{redactedText: string, replacements: Array<{token: string, start: number, end: number, type: string}>, unresolved: Array<{type: string, token: string, scrubbed: boolean, reason: string}>}}
+ * @returns {{redactedText: string, replacements: Array<{token: string, start: number, end: number, type: string}>, unresolved: Array<{type: string, token: string, scrubbed: boolean, reason: string}>, placeholders: Array<string|null>}}
  */
 export function applyDispositions(text, decisions) {
   const candidates = decisions.filter(shouldRedact);
@@ -243,7 +253,8 @@ export function applyDispositions(text, decisions) {
   // to compare) but are still kept, tokenized, and scrubbed by literal text.
   const unpositioned = candidates.filter((span) => !isPositioned(span, text));
   const kept = [...resolveOverlaps(candidates, text), ...unpositioned];
-  const keptWithTokens = assignTokens(kept, text);
+  const tokenBySpan = new Map();
+  const keptWithTokens = assignTokens(kept, text, tokenBySpan);
 
   const offsetReplaced = applyOffsetReplacements(text, keptWithTokens);
   const redactedText = scrubRepeats(offsetReplaced, keptWithTokens, text);
@@ -274,5 +285,7 @@ export function applyDispositions(text, decisions) {
       return { type: span.type, token: span.token, scrubbed, reason };
     });
 
-  return { redactedText, replacements, unresolved };
+  const placeholders = decisions.map((decision) => tokenBySpan.get(decision) ?? null);
+
+  return { redactedText, replacements, unresolved, placeholders };
 }

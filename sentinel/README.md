@@ -12,10 +12,17 @@ Reads `{id, text, planted}` lines, routes each detection through the policy, app
 redaction (ADR 0003), and writes `<out>/redacted.jsonl` + `<out>/ledger.jsonl` (hash-chained
 decision log) plus a per-type summary and ledger verify result to stdout.
 
-`<out>/redacted.jsonl` is an **eval artifact, not a safe export**: its `detections[].text` field
-carries the raw PII span verbatim so the run can be scored against `transcripts.jsonl` ground truth
-(the shape is fixed by `context/contracts/redacted-baseline.md`). Only the `redacted_text` field is
-safe to hand across a trust boundary.
+`<out>/redacted.jsonl` carries **no raw span text**. Each detection is the metadata form only —
+`{type, start, end, confidence, route, disposition, token, span_hmac}` — where `token` is the
+placeholder that replaced the span and `span_hmac` is the same salted HMAC the ledger row carries.
+The field list is a whitelist: a new detector field is persisted only once someone has decided it is
+not PII (ADR 0003, fail closed). Earlier revisions wrote `detections[].text` verbatim, which put
+every detected secret back into the file whose purpose is not to have them.
+
+Scoring a run against `transcripts.jsonl` ground truth still works without the span: HMAC the
+planted value with the same `CLEANROOM_SALT` and match on `span_hmac` (the HMAC-confirm property in
+`CONTEXT.md`). Note that `redacted_text` still contains, by design, any span routed
+`allow-observed` — that is the observed-not-acted wedge, not a leak of the detections sidecar.
 
 **Mock mode** (`--mock`, or auto-selected with a warning when `PIONEER_API_KEY` is unset): detects
 from `planted` ground truth, deterministic, no live calls. **Live mode**: calls Pioneer via
