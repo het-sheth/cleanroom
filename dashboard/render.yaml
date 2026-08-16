@@ -1,0 +1,25 @@
+# Render blueprint for a hosted, judge-shareable copy of the dashboard.
+#
+# A hosted instance can only show what is committed to the repo, so it serves
+# dashboard/fixtures — the synthetic demo set. The live scrub run (--dir out) stays local,
+# because raw transcripts and real scrub output never leave the trust boundary.
+#
+# Render Blueprints read render.yaml from the repository root: either move/symlink this file
+# there, or create the service by hand in the dashboard with Root Directory = dashboard and
+# the same build/start commands.
+
+services:
+  - type: web
+    name: cleanroom-dashboard
+    runtime: node
+    plan: free
+    rootDir: dashboard
+    buildCommand: node --version # zero dependencies: nothing to install
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: CLEANROOM_DIR # relative to rootDir
+        value: fixtures

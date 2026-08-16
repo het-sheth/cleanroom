@@ -1,0 +1,13 @@
+{
+  "name": "cleanroom-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Judge-facing demo dashboard for the cleanroom PII-redaction pipeline. Zero dependencies.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.js",
+    "demo": "node server.js --dir fixtures",
+    "test": "node --test test/*.test.js"
+  }
+}
